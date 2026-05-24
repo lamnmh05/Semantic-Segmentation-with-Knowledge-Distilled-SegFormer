@@ -1,15 +1,13 @@
-import argparse
-
 import torch
 import torch.optim as optim
 import yaml
-from torch.utils.data import DataLoader
 
 from src.dataloaders.ade20k import ADE20KDataset
 from src.dataloaders.coco_stuff import CocoStuff
-from src.distillers.attn_fd import AttnFD
-from src.distillers.fit_net import FitNet
-from src.engine.trainer import Trainer
+
+import json
+from huggingface_hub import hf_hub_download, login
+from transformers import SegformerConfig, SegformerForSemanticSegmentation
 
 
 def load_config(config_path):
@@ -42,28 +40,54 @@ def get_dataset(cfg, split):
 def get_model(model_name, num_classes):
     print(f"Instantiating model {model_name} with {num_classes} classes...")
 
-    class DummyModel(torch.nn.Module):
+    # Login to Hugging Face
+    try:
+        import os
+        hf_token = os.environ.get("HF_TOKEN")
+        if hf_token:
+            login(token=hf_token)
+        else:
+            print("No HF_TOKEN found in environment. Please login manually if required.")
+    except Exception as e:
+        print(f"HuggingFace login failed: {e}")
+
+    class SegformerWrapper(torch.nn.Module):
         def __init__(self, name, num_classes):
             super().__init__()
             self.name = name
             self.num_classes = num_classes
-            self.conv = torch.nn.Conv2d(3, num_classes, 1)
+
+            try:
+                id2label_path = hf_hub_download(repo_id="huggingface/label-files", filename="ade20k-id2label.json", repo_type="dataset")
+                with open(id2label_path, "r") as f:
+                    id2label = json.load(f)
+                id2label = {int(k): v for k, v in id2label.items()}
+                label2id = {v: k for k, v in id2label.items()}
+            except Exception as e:
+                print(f"Failed to load label mapping: {e}")
+                id2label = {i: str(i) for i in range(num_classes)}
+                label2id = {str(i): i for i in range(num_classes)}
+
+            config = SegformerConfig.from_pretrained(name)
+            config.num_labels = num_classes
+            config.ignore_index = 255
+            config.id2label = id2label
+            config.label2id = label2id
+            config.output_hidden_states = True
+
+            self.model = SegformerForSemanticSegmentation.from_pretrained(name, config=config, ignore_mismatched_sizes=True)
 
         def extract_feature(self, x):
-            h8, w8 = x.size(2) // 8, x.size(3) // 8
-            ch = 256 if "b5" in self.name else 64
-            feats = [
-                torch.randn(x.size(0), ch, h8, w8, device=x.device) for _ in range(4)
-            ]
-            attens = [
-                torch.randn(x.size(0), ch, h8, w8, device=x.device) for _ in range(4)
-            ]
-            return feats, attens, self.conv(x)
+            outputs = self.model(x, output_hidden_states=True, return_dict=True)
+            feats = list(outputs.hidden_states)
+            attens = list(outputs.hidden_states)
+            logits = outputs.logits
+            return feats, attens, logits
 
         def forward(self, x):
-            return self.conv(x)
+            return self.model(x).logits
 
-    return DummyModel(model_name, num_classes)
+    return SegformerWrapper(model_name, num_classes)
 
 
 def build_optimizer(distiller, cfg):
@@ -115,75 +139,3 @@ def build_optimizer(distiller, cfg):
             nesterov=train_cfg.get("nesterov", False),
         )
     return optim.AdamW(param_groups, lr=lr, betas=betas, weight_decay=weight_decay)
-
-
-def main():
-    parser = argparse.ArgumentParser(description="Knowledge Distillation for SegFormer")
-    parser.add_argument("--config", type=str, required=True, help="Path to config YAML file")
-    parser.add_argument("--data_path", type=str, default=None, help="Override path to dataset root")
-    parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
-    parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
-    args = parser.parse_args()
-
-    cfg = load_config(args.config)
-    
-    # Overrides
-    if args.data_path is not None:
-        cfg["dataset"]["data_root"] = args.data_path
-    if args.epochs is not None:
-        cfg["train"]["epochs"] = args.epochs
-        if "max_iters" in cfg["train"]:
-            del cfg["train"]["max_iters"]
-    if args.batch_size is not None:
-        cfg["dataset"]["batch_size"] = args.batch_size
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Using device: {device}")
-
-    train_split = "training" if cfg["dataset"]["name"] == "ADE20K" else "train"
-    val_split = "validation" if cfg["dataset"]["name"] == "ADE20K" else "val"
-
-    train_dataset = get_dataset(cfg, split=train_split)
-    val_dataset = get_dataset(cfg, split=val_split)
-
-    loader_kwargs = dict(
-        batch_size=cfg["dataset"]["batch_size"],
-        num_workers=cfg["dataset"]["num_workers"],
-        pin_memory=cfg["dataset"].get("pin_memory", True),
-    )
-    train_loader = DataLoader(
-        train_dataset, shuffle=True, drop_last=True, **loader_kwargs
-    )
-    val_loader = DataLoader(val_dataset, shuffle=False, **loader_kwargs)
-
-    num_classes = cfg["model"]["num_classes"]
-    teacher = get_model(cfg["model"]["teacher"], num_classes).to(device)
-    student = get_model(cfg["model"]["student"], num_classes).to(device)
-
-    teacher_ckpt = cfg["model"].get("teacher_checkpoint")
-    if teacher_ckpt:
-        state = torch.load(teacher_ckpt, map_location=device)
-        if isinstance(state, dict) and "state_dict" in state:
-            state = state["state_dict"]
-        teacher.load_state_dict(state, strict=False)
-        print(f"Loaded teacher weights from {teacher_ckpt}")
-
-    teacher.eval()
-    for p in teacher.parameters():
-        p.requires_grad = False
-
-    distill_method = cfg["distill"]["method"]
-    if distill_method == "FitNet":
-        distiller = FitNet(student, teacher, cfg)
-    elif distill_method == "AttnFD":
-        distiller = AttnFD(student, teacher, cfg)
-    else:
-        raise ValueError(f"Unknown distillation method: {distill_method}")
-
-    distiller = distiller.to(device)
-    optimizer = build_optimizer(distiller, cfg)
-
-    Trainer(distiller, train_loader, val_loader, optimizer, device, cfg).train()
-
-
-if __name__ == "__main__":
-    main()
