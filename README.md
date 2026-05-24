@@ -25,10 +25,10 @@ pip install -r requirements.txt
 
 ## Training
 
-You can run the training script using the provided configs:
+You can run the training script using the provided configs and optionally override parameters like dataset path, epochs, and batch size:
 
 ```bash
-python main.py --config configs/AttnFD_ADE20k.yml
+python main.py --config configs/AttnFD_ADE20k.yml --data_path ./datasets/ADE20K --epochs 50 --batch_size 8
 ```
 
 ## Kaggle Execution
@@ -39,8 +39,8 @@ If you are running on Kaggle, you can clone the repository and run it directly w
 %cd Semantic-Segmentation-with-Knowledge-Distilled-SegFormer
 !pip install -r requirements.txt
 
-# Run the training script
-!python main.py --config configs/AttnFD_ADE20k.yml
+# Run the training script with dataset path and epoch overrides
+!python main.py --config configs/AttnFD_ADE20k.yml --data_path /kaggle/input/ade20k --epochs 50 --batch_size 8
 ```
 
 ## Evaluation
