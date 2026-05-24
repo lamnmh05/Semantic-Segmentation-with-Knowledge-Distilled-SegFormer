@@ -1,6 +1,3 @@
-# FitNet + SegFormer on ADE20K
-# Paper: hint/guided at middle layer; stage-wise hint pretrain then full net (Sec. 2.3)
-# hint_layer=2 -> stage index 2 of 4 MiT blocks (middle)
 experiment:
   name: "FitNet_ADE20k"
   output_dir: "./checkpoints"
@@ -42,4 +39,4 @@ distill:
   ce_weight: 1.0
   feat_weight: 10.0
   hint_layer: 2
-  hint_pretrain_iters: 10000
+  hint_pretrain_iters: 500

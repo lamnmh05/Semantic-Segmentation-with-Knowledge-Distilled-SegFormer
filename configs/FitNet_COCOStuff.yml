@@ -39,4 +39,4 @@ distill:
   ce_weight: 1.0
   feat_weight: 10.0
   hint_layer: 2
-  hint_pretrain_iters: 10000
+  hint_pretrain_iters: 500

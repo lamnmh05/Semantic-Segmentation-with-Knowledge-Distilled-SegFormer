@@ -33,7 +33,7 @@ train:
   warmup_iters: 1500
   warmup_ratio: 1.0e-6
   poly_power: 1.0
-  connector_warmup_epochs: 1
+  connector_warmup_iters: 500
 
 distill:
   method: "AttnFD"

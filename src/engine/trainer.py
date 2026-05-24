@@ -50,8 +50,11 @@ class Trainer:
         self.method = distill_cfg.get("method")
         self.connector_warmup_iters = 0
         if self.method == "AttnFD":
-            warmup_epochs = train_cfg.get("connector_warmup_epochs", 1)
-            self.connector_warmup_iters = warmup_epochs * len(train_loader)
+            if train_cfg.get("connector_warmup_iters") is not None:
+                self.connector_warmup_iters = int(train_cfg["connector_warmup_iters"])
+            else:
+                warmup_epochs = train_cfg.get("connector_warmup_epochs", 0)
+                self.connector_warmup_iters = warmup_epochs * len(train_loader)
         self.hint_pretrain_iters = 0
         if self.method == "FitNet":
             self.hint_pretrain_iters = distill_cfg.get("hint_pretrain_iters", 0)
@@ -160,13 +163,13 @@ class Trainer:
                     f"ce={losses['loss_ce'].item():.4f} kd={losses['loss_kd'].item():.4f}"
                 )
 
-            should_eval = (
-                self.val_loader
-                and (global_iter + 1) % self.eval_interval == 0
-                and not self._is_connector_warmup(global_iter)
-                and not self._is_hint_pretrain(global_iter)
-            )
-            if should_eval:
+            at_eval_step = self.val_loader and (global_iter + 1) % self.eval_interval == 0
+            in_warmup = self._is_connector_warmup(global_iter) or self._is_hint_pretrain(global_iter)
+            if at_eval_step and in_warmup:
+                self.logger.info(
+                    f"Iter [{global_iter + 1}] skip eval (connector/hint warmup)"
+                )
+            if at_eval_step and not in_warmup:
                 student_name = self.cfg["model"].get("student", "student")
                 self.logger.info(f"Evaluating student ({student_name})...")
                 eval_results = run_student_evaluation(
