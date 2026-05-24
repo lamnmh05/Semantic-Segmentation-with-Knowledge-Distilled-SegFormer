@@ -12,9 +12,9 @@ It supports multiple distillation methods (FitNet, AttnFD) and datasets (ADE20K,
 
 ## Installation
 
-First, clone the repository and navigate into the project directory:
+First, clone the repository (specifically the `feat/source-feature` branch) and navigate into the project directory:
 ```bash
-git clone https://github.com/lamnmh05/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer.git
+git clone -b feat/source-feature https://github.com/lamnmh05/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer.git
 cd Semantic-Segmentation-with-Knowledge-Distilled-SegFormer
 ```
 
@@ -35,7 +35,7 @@ python main.py --config configs/AttnFD_ADE20k.yml
 If you are running on Kaggle, you can clone the repository and run it directly within a Notebook cell:
 
 ```python
-!git clone https://github.com/lamnmh05/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer.git
+!git clone -b feat/source-feature https://github.com/lamnmh05/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer.git
 %cd Semantic-Segmentation-with-Knowledge-Distilled-SegFormer
 !pip install -r requirements.txt
 
