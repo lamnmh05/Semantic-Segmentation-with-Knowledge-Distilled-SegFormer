@@ -4,16 +4,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-try:
-    from fvcore.nn import FlopCountAnalysis, parameter_count
-except ImportError:
-    FlopCountAnalysis = None
-    parameter_count = None
-
-try:
-    from thop import profile as thop_profile
-except ImportError:
-    thop_profile = None
+from fvcore.nn import FlopCountAnalysis, parameter_count
+from thop import profile as thop_profile
 
 
 def fast_hist(gt, pred, num_classes):
@@ -85,17 +77,24 @@ def count_parameters(model):
 def get_flops_params(model, device, input_size=(1, 3, 512, 512)):
     model.eval()
     dummy_input = torch.randn(input_size, device=device)
+    params_m = count_parameters(model)
 
     if FlopCountAnalysis is not None:
-        flops = FlopCountAnalysis(model, dummy_input).total()
-        params = parameter_count(model)[""]
-        return flops / 1e9, params / 1e6
+        try:
+            flops = FlopCountAnalysis(model, dummy_input).total()
+            params = parameter_count(model)[""]
+            return flops / 1e9, params / 1e6
+        except Exception:
+            pass
 
     if thop_profile is not None:
-        macs, params = thop_profile(model, inputs=(dummy_input,), verbose=False)
-        return (macs * 2) / 1e9, params / 1e6
+        try:
+            macs, params = thop_profile(model, inputs=(dummy_input,), verbose=False)
+            return (macs * 2) / 1e9, params / 1e6
+        except Exception:
+            pass
 
-    return 0.0, count_parameters(model)
+    return 0.0, params_m
 
 
 def measure_fps(model, device, input_size=(1, 3, 512, 512), num_iterations=100):
@@ -115,13 +114,15 @@ def measure_fps(model, device, input_size=(1, 3, 512, 512), num_iterations=100):
     return num_iterations / (time.time() - start_time)
 
 
-def run_student_evaluation(student, dataloader, device, num_classes, student_name="student"):
+def run_student_evaluation(
+    student, dataloader, device, num_classes, student_name="student", input_size=(1, 3, 512, 512)
+):
     was_training = student.training
     student.eval()
 
     miou = evaluate_student(student, dataloader, device, num_classes)
-    flops, params = get_flops_params(student, device)
-    fps = measure_fps(student, device)
+    flops, params = get_flops_params(student, device, input_size=input_size)
+    fps = measure_fps(student, device, input_size=input_size)
 
     print("-" * 50)
     print(f"Student evaluation ({student_name})")

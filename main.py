@@ -62,12 +62,15 @@ def main():
     load_checkpoint(student, student_ckpt, device)
 
     if args.eval_only:
+        img_size = cfg["dataset"]["img_size"]
+        h, w = (img_size[0], img_size[1]) if isinstance(img_size, (list, tuple)) else (img_size, img_size)
         run_student_evaluation(
             student,
             val_loader,
             device,
             num_classes,
             student_name=cfg["model"].get("student", "student"),
+            input_size=(1, 3, h, w),
         )
         return
 
