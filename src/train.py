@@ -120,9 +120,20 @@ def build_optimizer(distiller, cfg):
 def main():
     parser = argparse.ArgumentParser(description="Knowledge Distillation for SegFormer")
     parser.add_argument("--config", type=str, required=True, help="Path to config YAML file")
+    parser.add_argument("--data_path", type=str, default=None, help="Override path to dataset root")
+    parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
+    parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    
+    # Overrides
+    if args.data_path is not None:
+        cfg["dataset"]["data_root"] = args.data_path
+    if args.epochs is not None:
+        cfg["train"]["epochs"] = args.epochs
+    if args.batch_size is not None:
+        cfg["dataset"]["batch_size"] = args.batch_size
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
