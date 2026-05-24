@@ -4,8 +4,16 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-from fvcore.nn import FlopCountAnalysis, parameter_count
-from thop import profile as thop_profile
+try:
+    from fvcore.nn import FlopCountAnalysis, parameter_count
+except ImportError:
+    FlopCountAnalysis = None
+    parameter_count = None
+
+try:
+    from thop import profile as thop_profile
+except ImportError:
+    thop_profile = None
 
 
 def fast_hist(gt, pred, num_classes):
