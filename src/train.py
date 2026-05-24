@@ -132,6 +132,8 @@ def main():
         cfg["dataset"]["data_root"] = args.data_path
     if args.epochs is not None:
         cfg["train"]["epochs"] = args.epochs
+        if "max_iters" in cfg["train"]:
+            del cfg["train"]["max_iters"]
     if args.batch_size is not None:
         cfg["dataset"]["batch_size"] = args.batch_size
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

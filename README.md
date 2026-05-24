@@ -40,7 +40,7 @@ If you are running on Kaggle, you can clone the repository and run it directly w
 !pip install -r requirements.txt
 
 # Run the training script with dataset path and epoch overrides
-!python main.py --config configs/AttnFD_ADE20k.yml --data_path /kaggle/input/ade20k --epochs 50 --batch_size 8
+!python main.py --config configs/AttnFD_ADE20k.yml --data_path /kaggle/input/datasets/awsaf49/ade20k-dataset/ADEChallengeData2016 --epochs 50 --batch_size 8
 ```
 
 ## Evaluation
