@@ -3,10 +3,11 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 
-from src.train import load_config, get_dataset, get_model, build_optimizer
+from src.train import load_config, get_dataset, get_model, build_optimizer, load_checkpoint
 from src.distillers.attn_fd import AttnFD
 from src.distillers.fit_net import FitNet
 from src.engine.trainer import Trainer
+from src.eval import run_student_evaluation
 
 def main():
     if len(sys.argv) == 1:
@@ -18,6 +19,8 @@ def main():
     parser.add_argument("--data_path", type=str, default=None, help="Override path to dataset root")
     parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
     parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
+    parser.add_argument("--eval_only", action="store_true", help="Only evaluate student on val set")
+    parser.add_argument("--student_ckpt", type=str, default=None, help="Student checkpoint for eval_only")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -54,17 +57,19 @@ def main():
     teacher = get_model(cfg["model"]["teacher"], num_classes).to(device)
     student = get_model(cfg["model"]["student"], num_classes).to(device)
 
-    teacher_ckpt = cfg["model"].get("teacher_checkpoint")
-    if teacher_ckpt:
-        state = torch.load(teacher_ckpt, map_location=device)
-        if isinstance(state, dict) and "state_dict" in state:
-            state = state["state_dict"]
-        teacher.load_state_dict(state, strict=False)
-        print(f"Loaded teacher weights from {teacher_ckpt}")
+    load_checkpoint(teacher, cfg["model"].get("teacher_checkpoint"), device)
+    student_ckpt = args.student_ckpt or cfg["model"].get("student_checkpoint")
+    load_checkpoint(student, student_ckpt, device)
 
-    teacher.eval()
-    for p in teacher.parameters():
-        p.requires_grad = False
+    if args.eval_only:
+        run_student_evaluation(
+            student,
+            val_loader,
+            device,
+            num_classes,
+            student_name=cfg["model"].get("student", "student"),
+        )
+        return
 
     distill_method = cfg["distill"]["method"]
     if distill_method == "FitNet":
