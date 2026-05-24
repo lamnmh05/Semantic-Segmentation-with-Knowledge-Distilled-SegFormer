@@ -11,4 +11,6 @@ dependencies = [
     "torch>=2.0",
     "torchvision>=0.15",
     "tqdm>=4.66",
+    "thop>=0.1.1",
+    "fvcore>=0.1.5",
 ]

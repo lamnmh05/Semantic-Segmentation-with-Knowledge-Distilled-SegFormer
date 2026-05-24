@@ -60,6 +60,13 @@ class Trainer:
         self.logger = setup_logger(cfg["experiment"]["log_dir"], cfg["experiment"]["name"])
         os.makedirs(self.output_dir, exist_ok=True)
 
+        img_size = cfg["dataset"]["img_size"]
+        if isinstance(img_size, (list, tuple)):
+            h, w = img_size[0], img_size[1]
+        else:
+            h = w = img_size
+        self.eval_input_size = (1, 3, h, w)
+
     def _is_connector_warmup(self, global_iter):
         return (
             self.method == "AttnFD"
@@ -168,6 +175,7 @@ class Trainer:
                     self.device,
                     self.cfg["model"]["num_classes"],
                     student_name=student_name,
+                    input_size=self.eval_input_size,
                 )
                 miou = eval_results["mIoU"]
                 self.logger.info(
