@@ -1,0 +1,45 @@
+# AttnFD + SegFormer on ADE20K
+# Paper (Eq. 7): L = L_CE + alpha * L_Attn, alpha=2 on Pascal/COCO/CamVid
+# SegFormer baseline: AdamW lr=6e-5, 160k iters, poly LR, batch=2/GPU
+experiment:
+  name: "AttnFD_ADE20k"
+  output_dir: "./checkpoints"
+  log_dir: "./logs"
+
+dataset:
+  name: "ADE20K"
+  data_root: "./data/ADEChallengeData2016"
+  batch_size: 2
+  num_workers: 4
+  pin_memory: true
+  img_size: [512, 512]
+  augment: true
+  scale_range: [0.5, 2.0]
+  flip_prob: 0.5
+
+model:
+  teacher: "segformer_b5"
+  student: "segformer_b0"
+  num_classes: 150
+  teacher_checkpoint: null
+
+train:
+  max_iters: 160000
+  eval_interval: 4000
+  log_interval: 50
+  optimizer: "AdamW"
+  lr: 0.00006
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  head_lr_mult: 10.0
+  connector_lr_mult: 10.0
+  warmup_iters: 1500
+  warmup_ratio: 1.0e-6
+  poly_power: 1.0
+  connector_warmup_epochs: 1
+
+distill:
+  method: "AttnFD"
+  ce_weight: 1.0
+  attn_lambda: 2.0
+  attn_start_layer: 0
