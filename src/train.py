@@ -38,7 +38,16 @@ def get_dataset(cfg, split):
 
 
 def get_model(model_name, num_classes):
-    print(f"Instantiating model {model_name} with {num_classes} classes...")
+    name_map = {
+        "segformer_b0": "nvidia/mit-b0",
+        "segformer_b1": "nvidia/mit-b1",
+        "segformer_b2": "nvidia/mit-b2",
+        "segformer_b3": "nvidia/mit-b3",
+        "segformer_b4": "nvidia/mit-b4",
+        "segformer_b5": "nvidia/mit-b5",
+    }
+    hf_model_name = name_map.get(model_name.lower(), model_name)
+    print(f"Instantiating model {model_name} (HF repo: {hf_model_name}) with {num_classes} classes...")
 
     # Login to Hugging Face
     try:
@@ -68,14 +77,14 @@ def get_model(model_name, num_classes):
                 id2label = {i: str(i) for i in range(num_classes)}
                 label2id = {str(i): i for i in range(num_classes)}
 
-            config = SegformerConfig.from_pretrained(name)
+            config = SegformerConfig.from_pretrained(hf_model_name)
             config.num_labels = num_classes
             config.ignore_index = 255
             config.id2label = id2label
             config.label2id = label2id
             config.output_hidden_states = True
 
-            self.model = SegformerForSemanticSegmentation.from_pretrained(name, config=config, ignore_mismatched_sizes=True)
+            self.model = SegformerForSemanticSegmentation.from_pretrained(hf_model_name, config=config, ignore_mismatched_sizes=True)
 
         def extract_feature(self, x):
             outputs = self.model(x, output_hidden_states=True, return_dict=True)
