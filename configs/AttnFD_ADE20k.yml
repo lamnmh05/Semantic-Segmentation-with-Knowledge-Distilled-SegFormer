@@ -1,6 +1,3 @@
-# AttnFD + SegFormer on ADE20K
-# Paper (Eq. 7): L = L_CE + alpha * L_Attn, alpha=2 on Pascal/COCO/CamVid
-# SegFormer baseline: AdamW lr=6e-5, 160k iters, poly LR, batch=2/GPU
 experiment:
   name: "AttnFD_ADE20k"
   output_dir: "./checkpoints"
@@ -36,7 +33,7 @@ train:
   warmup_iters: 1500
   warmup_ratio: 1.0e-6
   poly_power: 1.0
-  connector_warmup_epochs: 1
+  connector_warmup_iters: 500
 
 distill:
   method: "AttnFD"
