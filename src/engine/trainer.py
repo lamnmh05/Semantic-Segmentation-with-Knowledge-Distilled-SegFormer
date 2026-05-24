@@ -4,7 +4,7 @@ import logging
 import torch
 
 from src.engine.lr_scheduler import get_lr, set_optimizer_lr
-from src.eval import run_full_evaluation
+from src.eval import run_student_evaluation
 
 
 def setup_logger(log_dir, name):
@@ -153,15 +153,25 @@ class Trainer:
                     f"ce={losses['loss_ce'].item():.4f} kd={losses['loss_kd'].item():.4f}"
                 )
 
-            if self.val_loader and (global_iter + 1) % self.eval_interval == 0:
-                self.logger.info("Running evaluation...")
-                eval_results = run_full_evaluation(
-                    self.distiller.student, self.val_loader, self.device,
+            should_eval = (
+                self.val_loader
+                and (global_iter + 1) % self.eval_interval == 0
+                and not self._is_connector_warmup(global_iter)
+                and not self._is_hint_pretrain(global_iter)
+            )
+            if should_eval:
+                student_name = self.cfg["model"].get("student", "student")
+                self.logger.info(f"Evaluating student ({student_name})...")
+                eval_results = run_student_evaluation(
+                    self.distiller.student,
+                    self.val_loader,
+                    self.device,
                     self.cfg["model"]["num_classes"],
+                    student_name=student_name,
                 )
                 miou = eval_results["mIoU"]
                 self.logger.info(
-                    f"mIoU: {miou:.2f}, FLOPs: {eval_results['FLOPs']:.2f}G, "
+                    f"Student mIoU: {miou:.2f}, FLOPs: {eval_results['FLOPs']:.2f}G, "
                     f"Params: {eval_results['Params']:.2f}M, FPS: {eval_results['FPS']:.2f}"
                 )
                 if miou > best_miou:

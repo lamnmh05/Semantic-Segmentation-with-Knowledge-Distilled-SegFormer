@@ -15,6 +15,19 @@ def load_config(config_path):
         return yaml.safe_load(f)
 
 
+def load_checkpoint(model, checkpoint_path, device):
+    if not checkpoint_path:
+        return
+    state = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    if isinstance(state, dict):
+        if "model_state_dict" in state:
+            state = state["model_state_dict"]
+        elif "state_dict" in state:
+            state = state["state_dict"]
+    model.load_state_dict(state, strict=False)
+    print(f"Loaded weights: {checkpoint_path}")
+
+
 def get_dataset(cfg, split):
     dataset_name = cfg["dataset"]["name"]
     data_root = cfg["dataset"]["data_root"]
