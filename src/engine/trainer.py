@@ -115,6 +115,8 @@ class Trainer:
             self.logger.info(f"FitNet hint pretrain for {self.hint_pretrain_iters} iters")
 
         best_miou = 0.0
+        early_stopping_counter = 0
+        early_stopping_patience = 5
         global_iter = 0
         epoch = 0
         train_iter = iter(self.train_loader)
@@ -197,11 +199,18 @@ class Trainer:
                 )
                 if miou > best_miou:
                     best_miou = miou
+                    early_stopping_counter = 0
                     best_path = os.path.join(
                         self.output_dir, f"{self.cfg['experiment']['name']}_best.pth"
                     )
                     torch.save(self.distiller.student.state_dict(), best_path)
                     self.logger.info(f"New best mIoU {best_miou:.2f} -> {best_path}")
+                else:
+                    early_stopping_counter += 1
+                    self.logger.info(f"Early stopping counter: {early_stopping_counter}/{early_stopping_patience}")
+                    if early_stopping_counter >= early_stopping_patience:
+                        self.logger.info("Early stopping triggered. Stopping training.")
+                        break
 
             if (global_iter + 1) % self.eval_interval == 0:
                 ckpt_path = os.path.join(
