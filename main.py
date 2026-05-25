@@ -84,8 +84,6 @@ def main():
 
     distiller = distiller.to(device)
     optimizer = build_optimizer(distiller, cfg)
-    if torch.cuda.device_count() > 1:
-        distiller = torch.nn.DataParallel(distiller)
 
     Trainer(distiller, train_loader, val_loader, optimizer, device, cfg).train()
 
