@@ -99,7 +99,7 @@ class AttnFD(Distiller):
         loss_attnfd = self._attnfd_loss(s_attens, t_attens)
 
         return logits_student, {
-            "loss_ce": loss_ce,
-            "loss_kd": loss_attnfd,
-            "loss_total": loss_ce + loss_attnfd,
+            "loss_ce": loss_ce.unsqueeze(0),
+            "loss_kd": loss_attnfd.unsqueeze(0),
+            "loss_total": (loss_ce + loss_attnfd).unsqueeze(0),
         }
