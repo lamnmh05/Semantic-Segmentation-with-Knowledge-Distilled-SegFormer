@@ -83,9 +83,9 @@ def main():
         raise ValueError(f"Unknown distillation method: {distill_method}")
 
     distiller = distiller.to(device)
+    optimizer = build_optimizer(distiller, cfg)
     if torch.cuda.device_count() > 1:
         distiller = torch.nn.DataParallel(distiller)
-    optimizer = build_optimizer(distiller, cfg)
 
     Trainer(distiller, train_loader, val_loader, optimizer, device, cfg).train()
 
