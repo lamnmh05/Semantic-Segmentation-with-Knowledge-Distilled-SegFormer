@@ -1,5 +1,7 @@
 import os
 import logging
+import time
+import datetime
 
 import torch
 
@@ -116,6 +118,7 @@ class Trainer:
         global_iter = 0
         epoch = 0
         train_iter = iter(self.train_loader)
+        start_time = time.time()
 
         while global_iter < self.max_iters:
             try:
@@ -154,13 +157,19 @@ class Trainer:
             self.optimizer.step()
 
             if (global_iter + 1) % self.log_interval == 0:
+                elapsed = time.time() - start_time
+                time_per_iter = elapsed / (global_iter + 1)
+                eta_seconds = time_per_iter * (self.max_iters - global_iter - 1)
+                eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
+                total_epochs = self.cfg["train"].get("epochs", 50)
                 phase = "warmup" if self._is_connector_warmup(global_iter) else (
                     "hint" if hint_only else "train"
                 )
                 self.logger.info(
-                    f"Iter [{global_iter + 1}/{self.max_iters}] epoch={epoch} phase={phase} "
+                    f"Iter [{global_iter + 1}/{self.max_iters}] epoch=[{epoch}/{total_epochs}] phase={phase} "
                     f"lr={lr:.2e} loss={loss.item():.4f} "
-                    f"ce={losses['loss_ce'].item():.4f} kd={losses['loss_kd'].item():.4f}"
+                    f"ce={losses['loss_ce'].item():.4f} kd={losses['loss_kd'].item():.4f} "
+                    f"time/iter={time_per_iter:.3f}s eta={eta_string}"
                 )
 
             at_eval_step = self.val_loader and (global_iter + 1) % self.eval_interval == 0
