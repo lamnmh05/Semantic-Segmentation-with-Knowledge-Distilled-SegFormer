@@ -162,11 +162,12 @@ class Trainer:
                 eta_seconds = time_per_iter * (self.max_iters - global_iter - 1)
                 eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
                 total_epochs = self.cfg["train"].get("epochs", 50)
+                fractional_epoch = (global_iter + 1) / len(self.train_loader)
                 phase = "warmup" if self._is_connector_warmup(global_iter) else (
                     "hint" if hint_only else "train"
                 )
                 self.logger.info(
-                    f"Iter [{global_iter + 1}/{self.max_iters}] epoch=[{epoch}/{total_epochs}] phase={phase} "
+                    f"Iter [{global_iter + 1}/{self.max_iters}] epoch=[{fractional_epoch:.2f}/{total_epochs}] phase={phase} "
                     f"lr={lr:.2e} loss={loss.item():.4f} "
                     f"ce={losses['loss_ce'].item():.4f} kd={losses['loss_kd'].item():.4f} "
                     f"time/iter={time_per_iter:.3f}s eta={eta_string}"
