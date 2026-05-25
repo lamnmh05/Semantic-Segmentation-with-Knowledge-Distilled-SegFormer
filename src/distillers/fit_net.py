@@ -84,9 +84,9 @@ class FitNet(Distiller):
 
         if hint_only:
             return None, {
-                "loss_ce": loss_feat.new_zeros(()),
-                "loss_kd": loss_feat,
-                "loss_total": loss_feat,
+                "loss_ce": loss_feat.new_zeros((1,)),
+                "loss_kd": loss_feat.unsqueeze(0),
+                "loss_total": loss_feat.unsqueeze(0),
             }
 
         logits_student = F.interpolate(
@@ -96,7 +96,7 @@ class FitNet(Distiller):
             logits_student, target, ignore_index=255
         )
         return logits_student, {
-            "loss_ce": loss_ce,
-            "loss_kd": loss_feat,
-            "loss_total": loss_ce + loss_feat,
+            "loss_ce": loss_ce.unsqueeze(0),
+            "loss_kd": loss_feat.unsqueeze(0),
+            "loss_total": (loss_ce + loss_feat).unsqueeze(0),
         }
