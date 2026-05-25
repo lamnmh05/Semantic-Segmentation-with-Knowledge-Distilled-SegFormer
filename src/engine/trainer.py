@@ -72,10 +72,6 @@ class Trainer:
             h = w = img_size
         self.eval_input_size = (1, 3, h, w)
 
-    @property
-    def inner_distiller(self):
-        return self.distiller.module if isinstance(self.distiller, torch.nn.DataParallel) else self.distiller
-
     def _is_connector_warmup(self, global_iter):
         return (
             self.method == "AttnFD"
@@ -91,21 +87,21 @@ class Trainer:
             p.requires_grad = False
 
         if self._is_connector_warmup(global_iter):
-            for p in self.inner_distiller.get_connector_parameters():
+            for p in self.distiller.get_connector_parameters():
                 p.requires_grad = True
             return
         if self._is_hint_pretrain(global_iter):
-            for p in self.inner_distiller.get_regressor_parameters():
+            for p in self.distiller.get_regressor_parameters():
                 p.requires_grad = True
             return
 
-        for p in self.inner_distiller.student.parameters():
+        for p in self.distiller.student.parameters():
             p.requires_grad = True
         if self.method == "AttnFD":
-            for p in self.inner_distiller.get_connector_parameters():
+            for p in self.distiller.get_connector_parameters():
                 p.requires_grad = True
         elif self.method == "FitNet":
-            for p in self.inner_distiller.get_regressor_parameters():
+            for p in self.distiller.get_regressor_parameters():
                 p.requires_grad = True
 
     def train(self):
@@ -150,11 +146,10 @@ class Trainer:
 
             self.optimizer.zero_grad()
             hint_only = self._is_hint_pretrain(global_iter)
-            logits, losses = self.distiller(
-                image=images, target=targets, hint_only=hint_only
+            logits, losses = self.distiller.forward_train(
+                images, targets, hint_only=hint_only
             )
-            loss = losses["loss_total"].mean()
-            losses = {k: v.mean() for k, v in losses.items()}
+            loss = losses["loss_total"]
             loss.backward()
             if self.grad_clip is not None:
                 torch.nn.utils.clip_grad_norm_(
@@ -190,7 +185,7 @@ class Trainer:
                 student_name = self.cfg["model"].get("student", "student")
                 self.logger.info(f"Evaluating student ({student_name})...")
                 eval_results = run_student_evaluation(
-                    self.inner_distiller.student,
+                    self.distiller.student,
                     self.val_loader,
                     self.device,
                     self.cfg["model"]["num_classes"],
@@ -208,7 +203,7 @@ class Trainer:
                     best_path = os.path.join(
                         self.output_dir, f"{self.cfg['experiment']['name']}_best.pth"
                     )
-                    torch.save(self.inner_distiller.student.state_dict(), best_path)
+                    torch.save(self.distiller.student.state_dict(), best_path)
                     self.logger.info(f"New best mIoU {best_miou:.2f} -> {best_path}")
                 else:
                     early_stopping_counter += 1
@@ -226,8 +221,8 @@ class Trainer:
                     {
                         "iter": global_iter + 1,
                         "epoch": epoch,
-                        "model_state_dict": self.inner_distiller.student.state_dict(),
-                        "distiller_state_dict": self.inner_distiller.state_dict(),
+                        "model_state_dict": self.distiller.student.state_dict(),
+                        "distiller_state_dict": self.distiller.state_dict(),
                         "optimizer_state_dict": self.optimizer.state_dict(),
                     },
                     ckpt_path,
