@@ -21,11 +21,11 @@ def main():
     parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
     parser.add_argument("--eval_only", action="store_true", help="Only evaluate student on val set")
     parser.add_argument("--student_ckpt", type=str, default=None, help="Student checkpoint for eval_only")
+    parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     
-    # Overrides
     if args.data_path is not None:
         cfg["dataset"]["data_root"] = args.data_path
     if args.epochs is not None:
@@ -34,6 +34,8 @@ def main():
             del cfg["train"]["max_iters"]
     if args.batch_size is not None:
         cfg["dataset"]["batch_size"] = args.batch_size
+    if args.lr is not None:
+        cfg["train"]["lr"] = args.lr
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
