@@ -71,6 +71,7 @@ class Trainer:
         else:
             h = w = img_size
         self.eval_input_size = (1, 3, h, w)
+        self.loss_history = []
 
     def _is_connector_warmup(self, global_iter):
         return (
@@ -158,6 +159,16 @@ class Trainer:
                 )
             self.optimizer.step()
 
+            # Record loss history
+            self.loss_history.append({
+                "iter": global_iter + 1,
+                "epoch": (global_iter + 1) / len(self.train_loader),
+                "lr": lr,
+                "loss_total": loss.item(),
+                "loss_ce": losses["loss_ce"].item() if "loss_ce" in losses else 0.0,
+                "loss_kd": losses["loss_kd"].item() if "loss_kd" in losses else 0.0,
+            })
+
             if (global_iter + 1) % self.log_interval == 0:
                 elapsed = time.time() - start_time
                 time_per_iter = elapsed / (global_iter + 1)
@@ -212,22 +223,17 @@ class Trainer:
                         self.logger.info("Early stopping triggered. Stopping training.")
                         break
 
-            if (global_iter + 1) % self.eval_interval == 0:
-                ckpt_path = os.path.join(
-                    self.output_dir,
-                    f"{self.cfg['experiment']['name']}_iter_{global_iter + 1}.pth",
-                )
-                torch.save(
-                    {
-                        "iter": global_iter + 1,
-                        "epoch": epoch,
-                        "model_state_dict": self.distiller.student.state_dict(),
-                        "distiller_state_dict": self.distiller.state_dict(),
-                        "optimizer_state_dict": self.optimizer.state_dict(),
-                    },
-                    ckpt_path,
-                )
+            # Checkpoint saving per interval is disabled to prevent disk overflow as requested.
+            # Only the best checkpoint (*_best.pth) is saved during evaluation.
+            pass
 
             global_iter += 1
+
+        # Save loss history at the end of training
+        loss_path = os.path.join(self.output_dir, f"{self.cfg['experiment']['name']}_loss.json")
+        import json
+        with open(loss_path, "w", encoding="utf-8") as f:
+            json.dump(self.loss_history, f, indent=4)
+        self.logger.info(f"Saved loss history to {loss_path}")
 
         self.logger.info(f"Training finished. Best mIoU: {best_miou:.2f}")
