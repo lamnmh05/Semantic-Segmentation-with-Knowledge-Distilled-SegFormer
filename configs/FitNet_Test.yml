@@ -36,9 +36,7 @@ train:
 
 distill:
   method: "FitNet"
-  temperature: 3.0
-  lambda_kd: 1.0
   ce_weight: 1.0
+  feat_weight: 10.0
   hint_layer: 2
-  hint_weight_stage2: 0.1
   hint_pretrain_iters: 100
