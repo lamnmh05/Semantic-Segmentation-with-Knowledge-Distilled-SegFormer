@@ -84,6 +84,9 @@ def main():
     elif distill_method == "MLP":
         from src.distillers.mlp import MLPFD
         distiller = MLPFD(student, teacher, cfg)
+    elif distill_method == "BPKD":
+        from src.distillers.bpkd import BPKD
+        distiller = BPKD(student, teacher, cfg)
     else:
         raise ValueError(f"Unknown distillation method: {distill_method}")
 
