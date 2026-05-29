@@ -75,8 +75,11 @@ class FitNet(Distiller):
         
         self.conv_reg = ConvReg(s_ch, t_ch).to(device)
 
+    def get_regressor_parameters(self):
+        return list(self.conv_reg.parameters())
+
     def get_learnable_parameters(self):
-        return super().get_learnable_parameters() + list(self.conv_reg.parameters())
+        return super().get_learnable_parameters() + self.get_regressor_parameters()
 
     def forward_train(self, image, target, stage="kd", **kwargs):
         # Forward pass
