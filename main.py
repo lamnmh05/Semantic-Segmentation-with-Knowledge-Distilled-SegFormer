@@ -81,6 +81,9 @@ def main():
         distiller = FitNet(student, teacher, cfg)
     elif distill_method == "AttnFD":
         distiller = AttnFD(student, teacher, cfg)
+    elif distill_method == "MLP":
+        from src.distillers.mlp import MLPFD
+        distiller = MLPFD(student, teacher, cfg)
     else:
         raise ValueError(f"Unknown distillation method: {distill_method}")
 
