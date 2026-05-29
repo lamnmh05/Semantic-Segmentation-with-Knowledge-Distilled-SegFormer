@@ -81,7 +81,7 @@ def main():
         distiller = FitNet(student, teacher, cfg)
     elif distill_method == "AttnFD":
         distiller = AttnFD(student, teacher, cfg)
-    elif distill_method == "MLP":
+    elif distill_method in ("MLP", "MLPFD"):
         from src.distillers.mlp import MLPFD
         distiller = MLPFD(student, teacher, cfg)
     elif distill_method == "BPKD":
