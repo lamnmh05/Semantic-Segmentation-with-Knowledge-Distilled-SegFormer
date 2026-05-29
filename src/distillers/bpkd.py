@@ -18,11 +18,11 @@ class BPKD(Distiller):
 
         distill = cfg["distill"]
 
-        self.ce_loss_weight = distill.get("ce_weight", 1.0)
-        self.kd_loss_weight = distill.get("kd_weight", 1.0)
+        self.ce_loss_weight = float(distill.get("ce_weight", 1.0))
+        self.kd_loss_weight = float(distill.get("kd_weight", 1.0))
 
-        self.temperature = distill.get("temperature", 4.0)
-        self.ignore_index = distill.get("ignore_index", 255)
+        self.temperature = float(distill.get("temperature", 4.0))
+        self.ignore_index = int(distill.get("ignore_index", 255))
 
         # boundary_radius = 1 nghĩa là làm dày boundary bằng kernel 3x3.
         # boundary_radius = 2 nghĩa là kernel 5x5.

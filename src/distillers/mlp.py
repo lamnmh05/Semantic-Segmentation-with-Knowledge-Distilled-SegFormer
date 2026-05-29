@@ -57,12 +57,12 @@ class MLPFD(Distiller):
 
         distill = cfg["distill"]
 
-        self.ce_loss_weight = distill.get("ce_weight", 1.0)
-        self.feat_loss_weight = distill.get("feat_weight", 1.0)
-        self.ignore_index = distill.get("ignore_index", 255)
+        self.ce_loss_weight = float(distill.get("ce_weight", 1.0))
+        self.feat_loss_weight = float(distill.get("feat_weight", 1.0))
+        self.ignore_index = int(distill.get("ignore_index", 255))
 
 
-        self.feat_layer = distill.get("feat_layer", 2)
+        self.feat_layer = int(distill.get("feat_layer", 2))
 
         # Không dùng dummy input.
         # Vì vậy cần khai báo channel trong config.
