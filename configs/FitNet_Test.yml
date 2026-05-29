@@ -1,0 +1,44 @@
+experiment:
+  name: "FitNet_Test"
+  output_dir: "./checkpoints"
+  log_dir: "./logs"
+
+dataset:
+  name: "ADE20K"
+  data_root: "/kaggle/input/datasets/awsaf49/ade20k-dataset/ADEChallengeData2016"
+  batch_size: 2
+  num_workers: 4
+  pin_memory: true
+  img_size: [512, 512]
+  augment: true
+  scale_range: [0.5, 2.0]
+  flip_prob: 0.5
+
+model:
+  teacher: "nvidia/segformer-b4-finetuned-ade-512-512"
+  student: "segformer_b0"
+  num_classes: 150
+  teacher_checkpoint: null
+
+train:
+  max_iters: 300
+  eval_interval: 100
+  log_interval: 10
+  optimizer: "AdamW"
+  lr: 0.00006
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+  head_lr_mult: 10.0
+  connector_lr_mult: 10.0
+  warmup_iters: 50
+  warmup_ratio: 1.0e-6
+  poly_power: 1.0
+
+distill:
+  method: "FitNet"
+  temperature: 3.0
+  lambda_kd: 1.0
+  ce_weight: 1.0
+  hint_layer: 2
+  hint_weight_stage2: 0.1
+  hint_pretrain_iters: 100
