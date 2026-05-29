@@ -117,7 +117,7 @@ class Trainer:
 
         best_miou = 0.0
         early_stopping_counter = 0
-        early_stopping_patience = 5
+        early_stopping_patience = 10
         global_iter = 0
         epoch = 0
         train_iter = iter(self.train_loader)
