@@ -6,106 +6,79 @@ from .base import Distiller
 
 
 class MLPTransform(nn.Module):
-    """
-    Channel-wise transformation using MLP.
-        student feature: [B, C_s, H, W]
-        teacher feature: [B, C_t, H, W]
-
-        [B, C_s, H, W] -> [B, C_t, H, W]
-    """
-
     def __init__(self, s_channel, t_channel, hidden_channel=None):
         super().__init__()
-
         if hidden_channel is None:
             hidden_channel = t_channel
 
         self.net = nn.Sequential(
-            nn.Conv2d(
-                in_channels=s_channel,
-                out_channels=hidden_channel,
-                kernel_size=1,
-                stride=1,
-                padding=0,
-                bias=True,
-            ),
+            nn.Conv2d(s_channel, hidden_channel, kernel_size=1, bias=False),
+            nn.BatchNorm2d(hidden_channel),
             nn.ReLU(inplace=True),
-            nn.Conv2d(
-                in_channels=hidden_channel,
-                out_channels=t_channel,
-                kernel_size=1,
-                stride=1,
-                padding=0,
-                bias=True,
-            ),
+            nn.Conv2d(hidden_channel, t_channel, kernel_size=1, bias=False),
+            nn.BatchNorm2d(t_channel),
         )
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         return self.net(x)
 
 
 class MLPFD(Distiller):
-    """
-    MLP-based Feature Distillation
-    Loss:
-        loss_total = ce_weight * CE(logits_student, target)
-                   + feat_weight * MSE(MLP(f_s), f_t)
-    """
-
     def __init__(self, student, teacher, cfg):
         super().__init__(student, teacher)
-
         distill = cfg["distill"]
-
+        
         self.ce_loss_weight = float(distill.get("ce_weight", 1.0))
         self.feat_loss_weight = float(distill.get("feat_weight", 1.0))
         self.ignore_index = int(distill.get("ignore_index", 255))
+        self.feat_layer_idx = int(distill.get("feat_layer", 2))
 
-
-        self.feat_layer = int(distill.get("feat_layer", 2))
-
-        # Không dùng dummy input.
-        # Vì vậy cần khai báo channel trong config.
-        student_channels = distill.get("student_channels", None)
-        teacher_channels = distill.get("teacher_channels", None)
-
-        if student_channels is None:
-            raise ValueError(
-                "Missing cfg['distill']['student_channels']."
-            )
-
-        if teacher_channels is None:
-            raise ValueError(
-                "Missing cfg['distill']['teacher_channels']. "
-            )
-
-        if self.feat_layer >= len(student_channels):
-            raise ValueError(
-                f"feat_layer={self.feat_layer} out of range for student_channels "
-                f"with length {len(student_channels)}"
-            )
-
-        if self.feat_layer >= len(teacher_channels):
-            raise ValueError(
-                f"feat_layer={self.feat_layer} out of range for teacher_channels "
-                f"with length {len(teacher_channels)}"
-            )
-
-        s_channel = student_channels[self.feat_layer]
-        t_channel = teacher_channels[self.feat_layer]
-
-        hidden_channel = distill.get("mlp_hidden_channel", t_channel)
-
-        self.mlp = MLPTransform(
-            s_channel=s_channel,
-            t_channel=t_channel,
-            hidden_channel=hidden_channel,
-        )
-
-        # Nếu student đã nằm trên GPU trước khi tạo distiller,
-        # đưa MLP sang cùng device.
+        img_size = cfg["dataset"]["img_size"]
+        h, w = (img_size[0], img_size[1]) if isinstance(img_size, (list, tuple)) else (img_size, img_size)
         device = next(self.student.parameters()).device
-        self.mlp.to(device)
+        
+        self.student.eval()
+        self.teacher.eval()
+        dummy = torch.randn(1, 3, h, w, device=device)
+        
+        with torch.no_grad():
+            s_out = self.student.extract_feature(dummy)
+            t_out = self.teacher.extract_feature(dummy)
+            
+            s_feats = self._parse_feats(s_out)
+            t_feats = self._parse_feats(t_out)
+
+        if self.feat_layer_idx >= len(s_feats) or self.feat_layer_idx >= len(t_feats):
+            raise ValueError(f"feat_layer_idx={self.feat_layer_idx} out of range.")
+
+        s_ch = s_feats[self.feat_layer_idx].shape[1]
+        t_ch = t_feats[self.feat_layer_idx].shape[1]
+        
+        hidden_ch = distill.get("mlp_hidden_channel", t_ch)
+        self.mlp = MLPTransform(s_ch, t_ch, hidden_ch).to(device)
+
+    def _parse_feats(self, output):
+        if isinstance(output, dict):
+            feats = output.get('feats', output.get('features', []))
+        elif isinstance(output, (list, tuple)):
+            if len(output) > 0 and isinstance(output[0], (list, tuple)):
+                feats = output[0]
+            else:
+                feats = list(output[:-1]) 
+        else:
+            raise ValueError("Unsupported output format from extract_feature")
+            
+        if isinstance(feats, dict): 
+            feats = list(feats.values())
+        if not isinstance(feats, (list, tuple)): 
+            feats = [feats]
+        return feats
 
     def get_mlp_parameters(self):
         return list(self.mlp.parameters())
@@ -117,49 +90,39 @@ class MLPFD(Distiller):
         return sum(p.numel() for p in self.mlp.parameters())
 
     def feature_loss(self, s_feats, t_feats):
-        """
-        Tính feature distillation loss:
+        idx = int(self.feat_layer_idx)
+        
+        f_s = s_feats[idx]
+        f_t = t_feats[idx]
 
-            MSE(MLP(f_s), f_t)
-        """
+        f_s_proj = self.mlp(f_s)
 
-        f_s = s_feats[self.feat_layer]
-        f_t = t_feats[self.feat_layer]
+        if f_s_proj.shape[2:] != f_t.shape[2:]:
+            f_s_proj = F.interpolate(f_s_proj, size=f_t.shape[2:], mode="bilinear", align_corners=False)
 
-        f_s = self.mlp(f_s)
-
-        if f_s.shape[2:] != f_t.shape[2:]:
-            f_s = F.interpolate(
-                f_s,
-                size=f_t.shape[2:],
-                mode="bilinear",
-                align_corners=False,
-            )
-
-        loss = F.mse_loss(f_s, f_t)
-
-        return loss
+        return F.mse_loss(f_s_proj, f_t)
 
     def forward_train(self, image, target, **kwargs):
-        s_feats, _, logits_student = self.student.extract_feature(image)
+        s_out = self.student.extract_feature(image)
+        s_feats = self._parse_feats(s_out)
+        
+        if isinstance(s_out, dict):
+            logits_student = s_out.get('logits')
+        elif isinstance(s_out, (list, tuple)):
+            logits_student = s_out[-1]
+        else:
+            logits_student = s_out
 
         with torch.no_grad():
-            t_feats, _, _ = self.teacher.extract_feature(image)
+            t_out = self.teacher.extract_feature(image)
+            t_feats = self._parse_feats(t_out)
 
         loss_feat = self.feat_loss_weight * self.feature_loss(s_feats, t_feats)
 
-        logits_student = F.interpolate(
-            logits_student,
-            size=target.shape[1:],
-            mode="bilinear",
-            align_corners=False,
-        )
+        if logits_student.shape[2:] != target.shape[1:]:
+            logits_student = F.interpolate(logits_student, size=target.shape[1:], mode="bilinear", align_corners=False)
 
-        loss_ce = self.ce_loss_weight * F.cross_entropy(
-            logits_student,
-            target,
-            ignore_index=self.ignore_index,
-        )
+        loss_ce = self.ce_loss_weight * F.cross_entropy(logits_student, target.long(), ignore_index=self.ignore_index)
 
         loss_total = loss_ce + loss_feat
 
