@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--eval_only", action="store_true", help="Only evaluate student on val set")
     parser.add_argument("--student_ckpt", type=str, default=None, help="Student checkpoint for eval_only")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
+    parser.add_argument("--hint_pretrain_iters", type=int, default=None, help="Override hint pretrain iterations")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -36,6 +37,10 @@ def main():
         cfg["dataset"]["batch_size"] = args.batch_size
     if args.lr is not None:
         cfg["train"]["lr"] = args.lr
+    if args.hint_pretrain_iters is not None:
+        if "distill" not in cfg:
+            cfg["distill"] = {}
+        cfg["distill"]["hint_pretrain_iters"] = args.hint_pretrain_iters
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
