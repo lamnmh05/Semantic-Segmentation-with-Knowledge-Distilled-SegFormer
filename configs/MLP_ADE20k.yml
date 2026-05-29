@@ -21,7 +21,7 @@ model:
   teacher_checkpoint: null
 
 train:
-  max_iters: 160000
+  max_iters: 200000
   eval_interval: 4000
   log_interval: 50
 
