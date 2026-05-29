@@ -147,8 +147,9 @@ class Trainer:
 
             self.optimizer.zero_grad()
             hint_only = self._is_hint_pretrain(global_iter)
+            stage = "hint" if hint_only else "kd"
             logits, losses = self.distiller.forward_train(
-                images, targets, hint_only=hint_only
+                images, targets, hint_only=hint_only, stage=stage
             )
             loss = losses["loss_total"]
             loss.backward()
