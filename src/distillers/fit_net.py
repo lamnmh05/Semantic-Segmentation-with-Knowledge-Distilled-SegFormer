@@ -38,11 +38,11 @@ class FitNet(Distiller):
         distill = cfg["distill"]
         
         # Hyperparams
-        self.temperature = distill.get("temperature", 3.0)
-        self.lambda_kd = distill.get("lambda_kd", 1.0)
-        self.ce_weight = distill.get("ce_weight", 1.0)
-        self.hint_layer_idx = distill.get("hint_layer", 2)
-        self.hint_weight_stage2 = distill.get("hint_weight_stage2", 0.1)
+        self.temperature = float(distill.get("temperature", 3.0))
+        self.lambda_kd = float(distill.get("lambda_kd", 1.0))
+        self.ce_weight = float(distill.get("ce_weight", 1.0))
+        self.hint_layer_idx = int(distill.get("hint_layer", 2))
+        self.hint_weight_stage2 = float(distill.get("hint_weight_stage2", 0.1))
         
         # Setup Connector
         img_size = cfg["dataset"]["img_size"]
