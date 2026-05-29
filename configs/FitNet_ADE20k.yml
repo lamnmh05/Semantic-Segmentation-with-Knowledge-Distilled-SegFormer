@@ -21,7 +21,7 @@ model:
   teacher_checkpoint: null
 
 train:
-  max_iters: 190000
+  max_iters: 200000
   eval_interval: 4000
   log_interval: 50
   optimizer: "AdamW"
@@ -42,4 +42,4 @@ distill:
   # feat_weight: 10.0
   hint_layer: 2
   hint_weight_stage2: 0.1
-  hint_pretrain_iters: 30000
+  hint_pretrain_iters: 10000
