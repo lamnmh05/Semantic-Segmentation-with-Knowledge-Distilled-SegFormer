@@ -4,3 +4,5 @@ numpy>=1.24
 tqdm>=4.66
 thop>=0.1.1
 fvcore>=0.1.5
+transformers>=4.0.0
+huggingface_hub>=0.14.0
