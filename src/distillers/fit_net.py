@@ -60,8 +60,8 @@ class FitNet(Distiller):
             t_out = self.teacher.extract_feature(dummy)
             
             # Robust extraction depending on return type (tuple vs dict)
-            s_feats = s_out[1] if isinstance(s_out, tuple) and len(s_out) > 1 else s_out.get('feats', [])
-            t_feats = t_out[1] if isinstance(t_out, tuple) and len(t_out) > 1 else t_out.get('feats', [])
+            s_feats = s_out[0] if isinstance(s_out, tuple) else s_out.get('feats', [])
+            t_feats = t_out[0] if isinstance(t_out, tuple) else t_out.get('feats', [])
             
             # Convert to list if it's a dict values
             if isinstance(s_feats, dict): s_feats = list(s_feats.values())
@@ -84,13 +84,13 @@ class FitNet(Distiller):
     def forward_train(self, image, target, stage="kd", **kwargs):
         # Forward pass
         s_out = self.student.extract_feature(image)
-        s_feats = s_out[1] if isinstance(s_out, tuple) and len(s_out) > 1 else s_out.get('feats', [])
-        logits_student = s_out[0] if isinstance(s_out, tuple) else s_out.get('logits')
+        s_feats = s_out[0] if isinstance(s_out, tuple) else s_out.get('feats', [])
+        logits_student = s_out[-1] if isinstance(s_out, tuple) else s_out.get('logits')
         
         with torch.no_grad():
             t_out = self.teacher.extract_feature(image)
-            t_feats = t_out[1] if isinstance(t_out, tuple) and len(t_out) > 1 else t_out.get('feats', [])
-            logits_teacher = t_out[0] if isinstance(t_out, tuple) else t_out.get('logits')
+            t_feats = t_out[0] if isinstance(t_out, tuple) else t_out.get('feats', [])
+            logits_teacher = t_out[-1] if isinstance(t_out, tuple) else t_out.get('logits')
 
         if isinstance(s_feats, dict): s_feats = list(s_feats.values())
         if isinstance(t_feats, dict): t_feats = list(t_feats.values())
