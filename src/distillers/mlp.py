@@ -12,15 +12,15 @@ class MLPTransform(nn.Module):
             hidden_channel = t_channel
 
         self.net = nn.Sequential(
-            nn.Conv2d(s_channel, hidden_channel, kernel_size=1, bias=False),
-            nn.BatchNorm2d(hidden_channel),
+            nn.Conv2d(s_channel, hidden_channel, kernel_size=1, bias=True),
             nn.ReLU(inplace=True),
-            nn.Conv2d(hidden_channel, t_channel, kernel_size=1, bias=False),
-            nn.BatchNorm2d(t_channel),
+            nn.Conv2d(hidden_channel, t_channel, kernel_size=1, bias=True),
         )
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
@@ -100,7 +100,8 @@ class MLPFD(Distiller):
         if f_s_proj.shape[2:] != f_t.shape[2:]:
             f_s_proj = F.interpolate(f_s_proj, size=f_t.shape[2:], mode="bilinear", align_corners=False)
 
-        return F.mse_loss(f_s_proj, f_t)
+        diff = (f_s_proj - f_t).pow(2)
+        return diff.sum() / diff.size(0)
 
     def forward_train(self, image, target, **kwargs):
         s_out = self.student.extract_feature(image)

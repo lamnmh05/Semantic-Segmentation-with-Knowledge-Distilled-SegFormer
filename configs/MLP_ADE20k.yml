@@ -41,10 +41,9 @@ distill:
   method: "MLPFD"
 
   ce_weight: 1.0
-  feat_weight: 2e-5
+  feat_weight: 1e-5
 
-  # Stage
-  feat_layer: 2
+  feat_layer: 3
 
   # SegFormer-B0 encoder channels
   student_channels: [32, 64, 160, 256]
@@ -53,10 +52,10 @@ distill:
   teacher_channels: [64, 128, 320, 512]
 
   # MLP: C_s -> hidden -> C_t
-  # feat_layer = 2:
-  # student C_s = 160
-  # teacher C_t = 320
-  # MLP = 160 -> 320 -> 320
-  mlp_hidden_channel: 320
+  # feat_layer = 3:
+  # student C_s = 256
+  # teacher C_t = 512
+  # MLP = 256 -> 512 -> 512
+  mlp_hidden_channel: 512
 
   ignore_index: 255
