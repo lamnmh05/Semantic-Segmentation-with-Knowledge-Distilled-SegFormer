@@ -18,6 +18,7 @@ def main():
     parser.add_argument("--config", type=str, required=True, help="Path to config YAML file")
     parser.add_argument("--data_path", type=str, default=None, help="Override path to dataset root")
     parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
+    parser.add_argument("--max_iters", type=int, default=None, help="Override max iterations")
     parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
     parser.add_argument("--eval_only", action="store_true", help="Only evaluate student on val set")
     parser.add_argument("--student_ckpt", type=str, default=None, help="Student checkpoint for eval_only")
@@ -33,6 +34,10 @@ def main():
         cfg["train"]["epochs"] = args.epochs
         if "max_iters" in cfg["train"]:
             del cfg["train"]["max_iters"]
+    if args.max_iters is not None:
+        cfg["train"]["max_iters"] = args.max_iters
+        if "epochs" in cfg["train"]:
+            del cfg["train"]["epochs"]
     if args.batch_size is not None:
         cfg["dataset"]["batch_size"] = args.batch_size
     if args.lr is not None:
