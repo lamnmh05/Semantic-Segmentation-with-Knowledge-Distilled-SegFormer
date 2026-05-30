@@ -11,7 +11,7 @@ from transformers import SegformerForSemanticSegmentation, SegformerConfig
 from src.distillers.MLP import MLPFDistiller
 from src.dataloaders.ade20k import get_ade20k_dataloader
 
-def load_config(config_path="configs/MLP_ADE20K.yaml"):
+def load_config(config_path="configs/MLP_ADE20k.yaml"):
     with open(config_path, "r") as f:
         return yaml.safe_load(f)
 
