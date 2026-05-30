@@ -45,6 +45,9 @@ class Trainer:
         self.warmup_iters = train_cfg.get("warmup_iters", 1500)
         self.warmup_ratio = train_cfg.get("warmup_ratio", 1e-6)
         self.poly_power = train_cfg.get("poly_power", 1.0)
+        self.lr_schedule = train_cfg.get("lr_schedule", "poly")
+        self.step_epochs = train_cfg.get("step_epochs", [16, 22])
+        self.step_gamma = train_cfg.get("step_gamma", 0.1)
         self.base_lr = train_cfg["lr"]
         self.grad_clip = train_cfg.get("grad_clip")
 
@@ -137,11 +140,16 @@ class Trainer:
             self._set_trainable_for_phase(global_iter)
             self.distiller.train()
 
+            current_epoch_val = global_iter / max(1, len(self.train_loader))
             lr = get_lr(
                 global_iter, self.base_lr, self.max_iters,
                 warmup_iters=self.warmup_iters,
                 warmup_ratio=self.warmup_ratio,
                 power=self.poly_power,
+                schedule=self.lr_schedule,
+                current_epoch=current_epoch_val,
+                step_epochs=self.step_epochs,
+                step_gamma=self.step_gamma
             )
             set_optimizer_lr(self.optimizer, lr)
 
