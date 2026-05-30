@@ -1,0 +1,62 @@
+experiment:
+  name: "MLPFD_ADE20K"
+  output_dir: "./checkpoints"
+  log_dir: "./logs"
+
+dataset:
+  name: "ADE20K"
+  data_root: "/kaggle/input/datasets/awsaf49/ade20k-dataset/ADEChallengeData2016"
+  batch_size: 2
+  num_workers: 4
+  pin_memory: true
+  img_size: [512, 512]
+  augment: true
+  scale_range: [0.5, 2.0]
+  flip_prob: 0.5
+
+model:
+  teacher: "nvidia/segformer-b4-finetuned-ade-512-512"
+  student: "segformer_b0"
+  num_classes: 150
+  teacher_checkpoint: null
+
+train:
+  max_iters: 160000
+  eval_interval: 4000
+  log_interval: 50
+
+  optimizer: "AdamW"
+  lr: 0.00006
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+
+  head_lr_mult: 10.0
+  connector_lr_mult: 10.0
+
+  warmup_iters: 1500
+  warmup_ratio: 1.0e-6
+  poly_power: 1.0
+
+distill:
+  method: "MLPFD"
+
+  ce_weight: 1.0
+  feat_weight: 2e-5
+
+  # Stage
+  feat_layer: 3
+
+  # SegFormer-B0 encoder channels
+  student_channels: [32, 64, 160, 256]
+
+  # SegFormer-B4 encoder channels
+  teacher_channels: [64, 128, 320, 512]
+
+  # MLP: C_s -> hidden -> C_t
+  # feat_layer = 2:
+  # student C_s = 160
+  # teacher C_t = 320
+  # MLP = 160 -> 320 -> 320
+  mlp_hidden_channel: 512
+
+  ignore_index: 255
