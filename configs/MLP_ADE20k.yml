@@ -41,7 +41,7 @@ distill:
   method: "MLPFD"
 
   ce_weight: 1.0
-  feat_weight: 2e-5
+  feat_weight: 2.0e-5
 
   # Stage
   feat_layer: 3
