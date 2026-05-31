@@ -22,7 +22,7 @@ model:
 
 train:
   max_iters: 200000
-  eval_interval: 4000
+  eval_interval: 2000
   log_interval: 50
 
   optimizer: "AdamW"
