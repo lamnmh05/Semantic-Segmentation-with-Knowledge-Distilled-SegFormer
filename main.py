@@ -5,7 +5,6 @@ from torch.utils.data import DataLoader
 
 from src.train import load_config, get_dataset, get_model, build_optimizer, load_checkpoint
 from src.distillers.attn_fd import AttnFD
-from src.distillers.combine import Combine
 from src.distillers.fit_net import FitNet
 from src.engine.trainer import Trainer
 from src.eval import run_student_evaluation
@@ -19,22 +18,34 @@ def main():
     parser.add_argument("--config", type=str, required=True, help="Path to config YAML file")
     parser.add_argument("--data_path", type=str, default=None, help="Override path to dataset root")
     parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
+    parser.add_argument("--max_iters", type=int, default=None, help="Override max iterations")
     parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
     parser.add_argument("--eval_only", action="store_true", help="Only evaluate student on val set")
     parser.add_argument("--student_ckpt", type=str, default=None, help="Student checkpoint for eval_only")
+    parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
+    parser.add_argument("--hint_pretrain_iters", type=int, default=None, help="Override hint pretrain iterations")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
     
-    # Overrides
     if args.data_path is not None:
         cfg["dataset"]["data_root"] = args.data_path
     if args.epochs is not None:
         cfg["train"]["epochs"] = args.epochs
         if "max_iters" in cfg["train"]:
             del cfg["train"]["max_iters"]
+    if args.max_iters is not None:
+        cfg["train"]["max_iters"] = args.max_iters
+        if "epochs" in cfg["train"]:
+            del cfg["train"]["epochs"]
     if args.batch_size is not None:
         cfg["dataset"]["batch_size"] = args.batch_size
+    if args.lr is not None:
+        cfg["train"]["lr"] = args.lr
+    if args.hint_pretrain_iters is not None:
+        if "distill" not in cfg:
+            cfg["distill"] = {}
+        cfg["distill"]["hint_pretrain_iters"] = args.hint_pretrain_iters
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
@@ -80,8 +91,12 @@ def main():
         distiller = FitNet(student, teacher, cfg)
     elif distill_method == "AttnFD":
         distiller = AttnFD(student, teacher, cfg)
-    elif distill_method == "Combine":
-        distiller = Combine(student, teacher, cfg)
+    elif distill_method in ("MLP", "MLPFD"):
+        from src.distillers.mlp import MLPFD
+        distiller = MLPFD(student, teacher, cfg)
+    elif distill_method == "BPKD":
+        from src.distillers.bpkd import BPKD
+        distiller = BPKD(student, teacher, cfg)
     else:
         raise ValueError(f"Unknown distillation method: {distill_method}")
 

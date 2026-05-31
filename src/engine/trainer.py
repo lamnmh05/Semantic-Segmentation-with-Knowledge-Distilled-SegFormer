@@ -45,6 +45,9 @@ class Trainer:
         self.warmup_iters = train_cfg.get("warmup_iters", 1500)
         self.warmup_ratio = train_cfg.get("warmup_ratio", 1e-6)
         self.poly_power = train_cfg.get("poly_power", 1.0)
+        self.lr_schedule = train_cfg.get("lr_schedule", "poly")
+        self.step_epochs = train_cfg.get("step_epochs", [16, 22])
+        self.step_gamma = train_cfg.get("step_gamma", 0.1)
         self.base_lr = train_cfg["lr"]
         self.grad_clip = train_cfg.get("grad_clip")
 
@@ -71,6 +74,7 @@ class Trainer:
         else:
             h = w = img_size
         self.eval_input_size = (1, 3, h, w)
+        self.loss_history = []
 
     def _is_connector_warmup(self, global_iter):
         return (
@@ -116,7 +120,7 @@ class Trainer:
 
         best_miou = 0.0
         early_stopping_counter = 0
-        early_stopping_patience = 5
+        early_stopping_patience = 10
         global_iter = 0
         epoch = 0
         train_iter = iter(self.train_loader)
@@ -136,18 +140,24 @@ class Trainer:
             self._set_trainable_for_phase(global_iter)
             self.distiller.train()
 
+            current_epoch_val = global_iter / max(1, len(self.train_loader))
             lr = get_lr(
                 global_iter, self.base_lr, self.max_iters,
                 warmup_iters=self.warmup_iters,
                 warmup_ratio=self.warmup_ratio,
                 power=self.poly_power,
+                schedule=self.lr_schedule,
+                current_epoch=current_epoch_val,
+                step_epochs=self.step_epochs,
+                step_gamma=self.step_gamma
             )
             set_optimizer_lr(self.optimizer, lr)
 
             self.optimizer.zero_grad()
             hint_only = self._is_hint_pretrain(global_iter)
+            stage = "hint" if hint_only else "kd"
             logits, losses = self.distiller.forward_train(
-                images, targets, hint_only=hint_only
+                images, targets, hint_only=hint_only, stage=stage
             )
             loss = losses["loss_total"]
             loss.backward()
@@ -157,6 +167,16 @@ class Trainer:
                     self.grad_clip,
                 )
             self.optimizer.step()
+
+            # Record loss history
+            self.loss_history.append({
+                "iter": global_iter + 1,
+                "epoch": (global_iter + 1) / len(self.train_loader),
+                "lr": lr,
+                "loss_total": loss.item(),
+                "loss_ce": losses["loss_ce"].item() if "loss_ce" in losses else 0.0,
+                "loss_kd": losses["loss_kd"].item() if "loss_kd" in losses else 0.0,
+            })
 
             if (global_iter + 1) % self.log_interval == 0:
                 elapsed = time.time() - start_time
@@ -212,22 +232,17 @@ class Trainer:
                         self.logger.info("Early stopping triggered. Stopping training.")
                         break
 
-            if (global_iter + 1) % self.eval_interval == 0:
-                ckpt_path = os.path.join(
-                    self.output_dir,
-                    f"{self.cfg['experiment']['name']}_iter_{global_iter + 1}.pth",
-                )
-                torch.save(
-                    {
-                        "iter": global_iter + 1,
-                        "epoch": epoch,
-                        "model_state_dict": self.distiller.student.state_dict(),
-                        "distiller_state_dict": self.distiller.state_dict(),
-                        "optimizer_state_dict": self.optimizer.state_dict(),
-                    },
-                    ckpt_path,
-                )
+            # Checkpoint saving per interval is disabled to prevent disk overflow as requested.
+            # Only the best checkpoint (*_best.pth) is saved during evaluation.
+            pass
 
             global_iter += 1
+
+        # Save loss history at the end of training
+        loss_path = os.path.join(self.output_dir, f"{self.cfg['experiment']['name']}_loss.json")
+        import json
+        with open(loss_path, "w", encoding="utf-8") as f:
+            json.dump(self.loss_history, f, indent=4)
+        self.logger.info(f"Saved loss history to {loss_path}")
 
         self.logger.info(f"Training finished. Best mIoU: {best_miou:.2f}")

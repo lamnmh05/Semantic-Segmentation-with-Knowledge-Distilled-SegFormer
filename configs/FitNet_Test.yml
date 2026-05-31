@@ -1,5 +1,5 @@
 experiment:
-  name: "FitNet_ADE20k"
+  name: "FitNet_Test"
   output_dir: "./checkpoints"
   log_dir: "./logs"
 
@@ -21,16 +21,16 @@ model:
   teacher_checkpoint: null
 
 train:
-  max_iters: 200000
-  eval_interval: 4000
-  log_interval: 50
+  max_iters: 300
+  eval_interval: 100
+  log_interval: 10
   optimizer: "AdamW"
   lr: 0.00006
   weight_decay: 0.01
   betas: [0.9, 0.999]
   head_lr_mult: 10.0
   connector_lr_mult: 10.0
-  warmup_iters: 1500
+  warmup_iters: 50
   warmup_ratio: 1.0e-6
   poly_power: 1.0
 
@@ -39,4 +39,4 @@ distill:
   ce_weight: 1.0
   feat_weight: 10.0
   hint_layer: 2
-  hint_pretrain_iters: 5000
+  hint_pretrain_iters: 100
