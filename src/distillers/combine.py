@@ -8,21 +8,44 @@ from .mlp import MLPTransform
 class Combine(Distiller):
     """Combined MLP feature distillation + BPKD for semantic segmentation."""
 
+    @staticmethod
+    def _to_scalar(value, name):
+        if isinstance(value, torch.Tensor):
+            if value.numel() != 1:
+                raise ValueError(f"{name} must be a scalar value, got tensor with shape {tuple(value.shape)}")
+            return float(value.item())
+
+        if isinstance(value, (list, tuple)):
+            if len(value) != 1:
+                raise ValueError(f"{name} must be a scalar value, got {value!r}")
+            value = value[0]
+
+        return float(value)
+
     def __init__(self, student, teacher, cfg):
         super().__init__(student, teacher)
 
         distill = cfg["distill"]
 
-        self.ce_loss_weight = distill.get("lambda_ce", distill.get("ce_weight", 1.0))
-        self.mlp_loss_weight = distill.get("lambda_mlp", distill.get("feat_weight", 1.0))
-        self.bpkd_loss_weight = distill.get("lambda_bpkd", distill.get("kd_weight", 1.0))
+        self.ce_loss_weight = self._to_scalar(
+            distill.get("lambda_ce", distill.get("ce_weight", 1.0)),
+            "lambda_ce",
+        )
+        self.mlp_loss_weight = self._to_scalar(
+            distill.get("lambda_mlp", distill.get("feat_weight", 1.0)),
+            "lambda_mlp",
+        )
+        self.bpkd_loss_weight = self._to_scalar(
+            distill.get("lambda_bpkd", distill.get("kd_weight", 1.0)),
+            "lambda_bpkd",
+        )
 
-        self.lambda_body = distill.get("lambda_body", 20.0)
-        self.lambda_edge = distill.get("lambda_edge", 50.0)
-        self.alpha_edge = distill.get("alpha_edge", 2.0)
-        self.temperature = distill.get("temperature", 4.0)
-        self.ignore_index = distill.get("ignore_index", 255)
-        self.boundary_radius = distill.get("boundary_radius", 3)
+        self.lambda_body = self._to_scalar(distill.get("lambda_body", 20.0), "lambda_body")
+        self.lambda_edge = self._to_scalar(distill.get("lambda_edge", 50.0), "lambda_edge")
+        self.alpha_edge = self._to_scalar(distill.get("alpha_edge", 2.0), "alpha_edge")
+        self.temperature = self._to_scalar(distill.get("temperature", 4.0), "temperature")
+        self.ignore_index = int(distill.get("ignore_index", 255))
+        self.boundary_radius = int(distill.get("boundary_radius", 3))
 
         self.feat_layer = distill.get("feat_layer", 2)
 
