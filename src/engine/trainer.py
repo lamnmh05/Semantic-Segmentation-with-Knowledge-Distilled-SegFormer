@@ -4,6 +4,7 @@ import time
 import datetime
 
 import torch
+from tqdm.auto import tqdm
 
 from src.engine.lr_scheduler import get_lr, set_optimizer_lr
 from src.eval import run_student_evaluation
@@ -125,122 +126,135 @@ class Trainer:
         epoch = 0
         train_iter = iter(self.train_loader)
         start_time = time.time()
+        pbar = tqdm(total=self.max_iters, initial=global_iter, desc="Training", dynamic_ncols=True)
 
-        while global_iter < self.max_iters:
-            try:
-                images, targets = next(train_iter)
-            except StopIteration:
-                epoch += 1
-                train_iter = iter(self.train_loader)
-                images, targets = next(train_iter)
+        try:
+            while global_iter < self.max_iters:
+                try:
+                    images, targets = next(train_iter)
+                except StopIteration:
+                    epoch += 1
+                    train_iter = iter(self.train_loader)
+                    images, targets = next(train_iter)
 
-            images = images.to(self.device)
-            targets = targets.to(self.device)
+                images = images.to(self.device)
+                targets = targets.to(self.device)
 
-            self._set_trainable_for_phase(global_iter)
-            self.distiller.train()
+                self._set_trainable_for_phase(global_iter)
+                self.distiller.train()
 
-            current_epoch_val = global_iter / max(1, len(self.train_loader))
-            lr = get_lr(
-                global_iter, self.base_lr, self.max_iters,
-                warmup_iters=self.warmup_iters,
-                warmup_ratio=self.warmup_ratio,
-                power=self.poly_power,
-                schedule=self.lr_schedule,
-                current_epoch=current_epoch_val,
-                step_epochs=self.step_epochs,
-                step_gamma=self.step_gamma
-            )
-            set_optimizer_lr(self.optimizer, lr)
-
-            self.optimizer.zero_grad()
-            hint_only = self._is_hint_pretrain(global_iter)
-            stage = "hint" if hint_only else "kd"
-            logits, losses = self.distiller.forward_train(
-                images, targets, hint_only=hint_only, stage=stage
-            )
-            loss = losses["loss_total"]
-            loss.backward()
-            if self.grad_clip is not None:
-                torch.nn.utils.clip_grad_norm_(
-                    [p for p in self.distiller.parameters() if p.requires_grad],
-                    self.grad_clip,
+                current_epoch_val = global_iter / max(1, len(self.train_loader))
+                lr = get_lr(
+                    global_iter, self.base_lr, self.max_iters,
+                    warmup_iters=self.warmup_iters,
+                    warmup_ratio=self.warmup_ratio,
+                    power=self.poly_power,
+                    schedule=self.lr_schedule,
+                    current_epoch=current_epoch_val,
+                    step_epochs=self.step_epochs,
+                    step_gamma=self.step_gamma
                 )
-            self.optimizer.step()
+                set_optimizer_lr(self.optimizer, lr)
 
-            # Record loss history
-            scalar_losses = {
-                name: value.item() if torch.is_tensor(value) else float(value)
-                for name, value in losses.items()
-            }
-            self.loss_history.append({
-                "iter": global_iter + 1,
-                "epoch": (global_iter + 1) / len(self.train_loader),
-                "lr": lr,
-                **scalar_losses,
-            })
+                self.optimizer.zero_grad()
+                hint_only = self._is_hint_pretrain(global_iter)
+                stage = "hint" if hint_only else "kd"
+                logits, losses = self.distiller.forward_train(
+                    images, targets, hint_only=hint_only, stage=stage
+                )
+                loss = losses["loss_total"]
+                loss.backward()
+                if self.grad_clip is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        [p for p in self.distiller.parameters() if p.requires_grad],
+                        self.grad_clip,
+                    )
+                self.optimizer.step()
 
-            if (global_iter + 1) % self.log_interval == 0:
-                elapsed = time.time() - start_time
-                time_per_iter = elapsed / (global_iter + 1)
-                eta_seconds = time_per_iter * (self.max_iters - global_iter - 1)
-                eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
-                total_epochs = self.cfg["train"].get("epochs", 50)
-                fractional_epoch = (global_iter + 1) / len(self.train_loader)
+                # Record loss history
+                scalar_losses = {
+                    name: value.item() if torch.is_tensor(value) else float(value)
+                    for name, value in losses.items()
+                }
+                self.loss_history.append({
+                    "iter": global_iter + 1,
+                    "epoch": (global_iter + 1) / len(self.train_loader),
+                    "lr": lr,
+                    **scalar_losses,
+                })
+
                 phase = "warmup" if self._is_connector_warmup(global_iter) else (
                     "hint" if hint_only else "train"
                 )
-                loss_summary = " ".join(
-                    f"{name}={value:.4f}" for name, value in scalar_losses.items()
+                pbar.set_postfix(
+                    loss=float(loss.item()),
+                    ce=float(scalar_losses.get("loss_ce", 0.0)),
+                    kd=float(scalar_losses.get("loss_kd", 0.0)),
+                    lr=f"{lr:.2e}",
+                    phase=phase,
                 )
-                self.logger.info(
-                    f"Iter [{global_iter + 1}/{self.max_iters}] epoch=[{fractional_epoch:.2f}/{total_epochs}] phase={phase} "
-                    f"lr={lr:.2e} {loss_summary} "
-                    f"time/iter={time_per_iter:.3f}s eta={eta_string}"
-                )
+                pbar.update(1)
 
-            at_eval_step = self.val_loader and (global_iter + 1) % self.eval_interval == 0
-            in_warmup = self._is_connector_warmup(global_iter) or self._is_hint_pretrain(global_iter)
-            if at_eval_step and in_warmup:
-                self.logger.info(
-                    f"Iter [{global_iter + 1}] skip eval (connector/hint warmup)"
-                )
-            if at_eval_step and not in_warmup:
-                student_name = self.cfg["model"].get("student", "student")
-                self.logger.info(f"Evaluating student ({student_name})...")
-                eval_results = run_student_evaluation(
-                    self.distiller.student,
-                    self.val_loader,
-                    self.device,
-                    self.cfg["model"]["num_classes"],
-                    student_name=student_name,
-                    input_size=self.eval_input_size,
-                )
-                miou = eval_results["mIoU"]
-                self.logger.info(
-                    f"Student mIoU: {miou:.2f}, FLOPs: {eval_results['FLOPs']:.2f}G, "
-                    f"Params: {eval_results['Params']:.2f}M, FPS: {eval_results['FPS']:.2f}"
-                )
-                if miou > best_miou:
-                    best_miou = miou
-                    early_stopping_counter = 0
-                    best_path = os.path.join(
-                        self.output_dir, f"{self.cfg['experiment']['name']}_best.pth"
+                if (global_iter + 1) % self.log_interval == 0:
+                    elapsed = time.time() - start_time
+                    time_per_iter = elapsed / (global_iter + 1)
+                    eta_seconds = time_per_iter * (self.max_iters - global_iter - 1)
+                    eta_string = str(datetime.timedelta(seconds=int(eta_seconds)))
+                    total_epochs = self.cfg["train"].get("epochs", 50)
+                    fractional_epoch = (global_iter + 1) / len(self.train_loader)
+                    loss_summary = " ".join(
+                        f"{name}={value:.4f}" for name, value in scalar_losses.items()
                     )
-                    torch.save(self.distiller.student.state_dict(), best_path)
-                    self.logger.info(f"New best mIoU {best_miou:.2f} -> {best_path}")
-                else:
-                    early_stopping_counter += 1
-                    self.logger.info(f"Early stopping counter: {early_stopping_counter}/{early_stopping_patience}")
-                    if early_stopping_counter >= early_stopping_patience:
-                        self.logger.info("Early stopping triggered. Stopping training.")
-                        break
+                    self.logger.info(
+                        f"Iter [{global_iter + 1}/{self.max_iters}] epoch=[{fractional_epoch:.2f}/{total_epochs}] phase={phase} "
+                        f"lr={lr:.2e} {loss_summary} "
+                        f"time/iter={time_per_iter:.3f}s eta={eta_string}"
+                    )
 
-            # Checkpoint saving per interval is disabled to prevent disk overflow as requested.
-            # Only the best checkpoint (*_best.pth) is saved during evaluation.
-            pass
+                at_eval_step = self.val_loader and (global_iter + 1) % self.eval_interval == 0
+                in_warmup = self._is_connector_warmup(global_iter) or self._is_hint_pretrain(global_iter)
+                if at_eval_step and in_warmup:
+                    self.logger.info(
+                        f"Iter [{global_iter + 1}] skip eval (connector/hint warmup)"
+                    )
+                if at_eval_step and not in_warmup:
+                    student_name = self.cfg["model"].get("student", "student")
+                    self.logger.info(f"Evaluating student ({student_name})...")
+                    eval_results = run_student_evaluation(
+                        self.distiller.student,
+                        self.val_loader,
+                        self.device,
+                        self.cfg["model"]["num_classes"],
+                        student_name=student_name,
+                        input_size=self.eval_input_size,
+                    )
+                    miou = eval_results["mIoU"]
+                    self.logger.info(
+                        f"Student mIoU: {miou:.2f}, FLOPs: {eval_results['FLOPs']:.2f}G, "
+                        f"Params: {eval_results['Params']:.2f}M, FPS: {eval_results['FPS']:.2f}"
+                    )
+                    if miou > best_miou:
+                        best_miou = miou
+                        early_stopping_counter = 0
+                        best_path = os.path.join(
+                            self.output_dir, f"{self.cfg['experiment']['name']}_best.pth"
+                        )
+                        torch.save(self.distiller.student.state_dict(), best_path)
+                        self.logger.info(f"New best mIoU {best_miou:.2f} -> {best_path}")
+                    else:
+                        early_stopping_counter += 1
+                        self.logger.info(f"Early stopping counter: {early_stopping_counter}/{early_stopping_patience}")
+                        if early_stopping_counter >= early_stopping_patience:
+                            self.logger.info("Early stopping triggered. Stopping training.")
+                            break
 
-            global_iter += 1
+                # Checkpoint saving per interval is disabled to prevent disk overflow as requested.
+                # Only the best checkpoint (*_best.pth) is saved during evaluation.
+                pass
+
+                global_iter += 1
+        finally:
+            pbar.close()
 
         # Save loss history at the end of training
         loss_path = os.path.join(self.output_dir, f"{self.cfg['experiment']['name']}_loss.json")
