@@ -1,7 +1,7 @@
 # Semantic Segmentation with Knowledge Distilled SegFormer
 
 This repository contains the implementation for Semantic Segmentation using Knowledge Distillation with SegFormer. 
-It supports multiple distillation methods (FitNet, AttnFD) and datasets (ADE20K, COCOStuff).
+It supports multiple distillation methods (FitNet, AttnFD, MLPFD, BPKD, Combine) and datasets (ADE20K, COCOStuff).
 
 ## Features
 - **Models**: SegFormer (Teacher/Student)
@@ -9,33 +9,41 @@ It supports multiple distillation methods (FitNet, AttnFD) and datasets (ADE20K,
 - **Distillation Methods**: 
   - FitNet (Feature-based Distillation)
   - AttnFD (Attention-based Feature Distillation)
+  - MLPFD (MLP-based Feature Distillation)
+  - BPKD (Boundary Privileged Knowledge Distillation)
+  - Combine (MLPFD + BPKD)
 
-## Installation
+## Vast.ai Setup
 
-First, clone the repository (specifically the `feat/source-feature` branch) and navigate into the project directory:
+If you are running on Vast.ai, use the following commands:
 ```bash
-git clone -b feat/source-feature https://github.com/lamnmh05/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer.git
+git clone --branch feat/source-combine https://github.com/lamnmh05/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer.git
+
 cd Semantic-Segmentation-with-Knowledge-Distilled-SegFormer
+
+wget -O ade20k-dataset.zip https://www.kaggle.com/api/v1/datasets/download/awsaf49/ade20k-dataset
+
+unzip ade20k-dataset.zip
+
+pip install uv
+
+uv sync
 ```
 
-Then, install the required dependencies:
+Run training with the Combine config:
 ```bash
-pip install -r requirements.txt
+uv run main.py --config configs/combine.yml --data_path ADEChallengeData2016 --batch_size 32 --max_iters 40000 --lr 0.00006
+
+uv run main.py --config configs/combine.yml --data_path ADEChallengeData2016 --batch_size 48 --max_iters 60000 --lr 0.00006
 ```
 
-## Training
-
-You can run the training script using the provided configs and optionally override parameters like dataset path, epochs, and batch size:
-
-```bash
-python main.py --config configs/AttnFD_ADE20k.yml --data_path ./datasets/ADE20K --epochs 50 --batch_size 8
-```
+If the extracted dataset folder is not in the repository root, update `--data_path` to the actual `ADEChallengeData2016` path.
 
 ## Kaggle Execution
 If you are running on Kaggle, you can clone the repository and run it directly within a Notebook cell:
 
 ```python
-!git clone -b feat/source-feature https://github.com/lamnmh05/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer.git
+!git clone --branch feat/source-combine https://github.com/lamnmh05/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer.git
 %cd Semantic-Segmentation-with-Knowledge-Distilled-SegFormer
 !pip install -r requirements.txt
 
