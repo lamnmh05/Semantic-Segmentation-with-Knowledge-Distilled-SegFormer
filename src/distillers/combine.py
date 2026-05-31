@@ -117,20 +117,18 @@ class Combine(Distiller):
         return target.long()
 
     def feature_loss(self, s_feats, t_feats):
-        f_s = s_feats[self.feat_layer]
-        f_t = t_feats[self.feat_layer]
+        idx = int(self.feat_layer_idx)
+        
+        f_s = s_feats[idx]
+        f_t = t_feats[idx]
 
-        f_s = self.mlp(f_s)
+        f_s_proj = self.mlp(f_s)
 
-        if f_s.shape[2:] != f_t.shape[2:]:
-            f_s = F.interpolate(
-                f_s,
-                size=f_t.shape[2:],
-                mode="bilinear",
-                align_corners=False,
-            )
+        if f_s_proj.shape[2:] != f_t.shape[2:]:
+            f_s_proj = F.interpolate(f_s_proj, size=f_t.shape[2:], mode="bilinear", align_corners=False)
 
-        return F.mse_loss(f_s, f_t)
+        diff = (f_s_proj - f_t).pow(2)
+        return diff.sum() / diff.size(0)
 
     def get_edge_mask(self, target, num_classes, logits_size):
         target = self._prepare_target(target)
