@@ -100,7 +100,7 @@ class Trainer:
         if self.method == "AttnFD":
             for p in self.distiller.get_connector_parameters():
                 p.requires_grad = True
-        elif self.method == "FitNet":
+        if hasattr(self.distiller, "get_regressor_parameters"):
             for p in self.distiller.get_regressor_parameters():
                 p.requires_grad = True
 

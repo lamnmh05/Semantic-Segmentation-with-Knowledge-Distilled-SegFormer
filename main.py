@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 
 from src.train import load_config, get_dataset, get_model, build_optimizer, load_checkpoint
 from src.distillers.attn_fd import AttnFD
+from src.distillers.combine import Combine
 from src.distillers.fit_net import FitNet
 from src.engine.trainer import Trainer
 from src.eval import run_student_evaluation
@@ -79,6 +80,8 @@ def main():
         distiller = FitNet(student, teacher, cfg)
     elif distill_method == "AttnFD":
         distiller = AttnFD(student, teacher, cfg)
+    elif distill_method == "Combine":
+        distiller = Combine(student, teacher, cfg)
     else:
         raise ValueError(f"Unknown distillation method: {distill_method}")
 
