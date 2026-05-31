@@ -169,13 +169,15 @@ class Trainer:
             self.optimizer.step()
 
             # Record loss history
+            scalar_losses = {
+                name: value.item() if torch.is_tensor(value) else float(value)
+                for name, value in losses.items()
+            }
             self.loss_history.append({
                 "iter": global_iter + 1,
                 "epoch": (global_iter + 1) / len(self.train_loader),
                 "lr": lr,
-                "loss_total": loss.item(),
-                "loss_ce": losses["loss_ce"].item() if "loss_ce" in losses else 0.0,
-                "loss_kd": losses["loss_kd"].item() if "loss_kd" in losses else 0.0,
+                **scalar_losses,
             })
 
             if (global_iter + 1) % self.log_interval == 0:
@@ -188,10 +190,12 @@ class Trainer:
                 phase = "warmup" if self._is_connector_warmup(global_iter) else (
                     "hint" if hint_only else "train"
                 )
+                loss_summary = " ".join(
+                    f"{name}={value:.4f}" for name, value in scalar_losses.items()
+                )
                 self.logger.info(
                     f"Iter [{global_iter + 1}/{self.max_iters}] epoch=[{fractional_epoch:.2f}/{total_epochs}] phase={phase} "
-                    f"lr={lr:.2e} loss={loss.item():.4f} "
-                    f"ce={losses['loss_ce'].item():.4f} kd={losses['loss_kd'].item():.4f} "
+                    f"lr={lr:.2e} {loss_summary} "
                     f"time/iter={time_per_iter:.3f}s eta={eta_string}"
                 )
 
