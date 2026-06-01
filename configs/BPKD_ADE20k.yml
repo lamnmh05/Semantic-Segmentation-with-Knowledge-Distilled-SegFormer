@@ -1,4 +1,3 @@
-%%writefile '/kaggle/working/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer/configs/BPKD_ADE20k.yml'
 experiment:
   name: "BPKD_ADE20K"
   output_dir: "./checkpoints"
