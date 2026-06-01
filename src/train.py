@@ -4,10 +4,7 @@ import yaml
 
 from src.dataloaders.ade20k import ADE20KDataset
 from src.dataloaders.coco_stuff import CocoStuff
-
-import json
-from huggingface_hub import hf_hub_download, login
-from transformers import SegformerConfig, SegformerForSemanticSegmentation
+from src.models.segformer import build_segformer
 
 
 def load_config(config_path):
@@ -50,66 +47,41 @@ def get_dataset(cfg, split):
     raise ValueError(f"Unknown dataset: {dataset_name}")
 
 
-def get_model(model_name, num_classes):
-    name_map = {
-        "segformer_b0": "nvidia/mit-b0",
-        "segformer_b1": "nvidia/mit-b1",
-        "segformer_b2": "nvidia/mit-b2",
-        "segformer_b3": "nvidia/mit-b3",
-        "segformer_b4": "nvidia/mit-b4",
-        "segformer_b5": "nvidia/mit-b5",
-    }
-    hf_model_name = name_map.get(model_name.lower(), model_name)
-    print(f"Instantiating model {model_name} (HF repo: {hf_model_name}) with {num_classes} classes...")
+def _parse_model_entry(model_cfg, role):
+    entry = model_cfg.get(role)
+    if isinstance(entry, dict):
+        name = entry.get("name") or entry.get("model") or entry.get("id")
+        pretrained = entry.get("pretrained")
+        pretrained_encoder = entry.get("pretrained_encoder") or entry.get("encoder_pretrained")
+        return name, pretrained, pretrained_encoder
 
-    # Login to Hugging Face
-    try:
-        import os
-        hf_token = os.environ.get("HF_TOKEN")
-        if hf_token:
-            login(token=hf_token)
-        else:
-            print("No HF_TOKEN found in environment. Please login manually if required.")
-    except Exception as e:
-        print(f"HuggingFace login failed: {e}")
+    name = entry
+    pretrained = model_cfg.get(f"{role}_pretrained")
+    pretrained_encoder = model_cfg.get(f"{role}_pretrained_encoder") or model_cfg.get(
+        f"{role}_encoder_pretrained"
+    )
+    return name, pretrained, pretrained_encoder
 
-    class SegformerWrapper(torch.nn.Module):
-        def __init__(self, name, num_classes):
-            super().__init__()
-            self.name = name
-            self.num_classes = num_classes
 
-            try:
-                id2label_path = hf_hub_download(repo_id="huggingface/label-files", filename="ade20k-id2label.json", repo_type="dataset")
-                with open(id2label_path, "r") as f:
-                    id2label = json.load(f)
-                id2label = {int(k): v for k, v in id2label.items()}
-                label2id = {v: k for k, v in id2label.items()}
-            except Exception as e:
-                print(f"Failed to load label mapping: {e}")
-                id2label = {i: str(i) for i in range(num_classes)}
-                label2id = {str(i): i for i in range(num_classes)}
+def get_model(model_or_cfg, num_classes=None, role=None):
+    if role is None:
+        if num_classes is None:
+            raise ValueError("num_classes is required when role is not provided")
+        return build_segformer(model_or_cfg, num_classes)
 
-            config = SegformerConfig.from_pretrained(hf_model_name)
-            config.num_labels = num_classes
-            config.ignore_index = 255
-            config.id2label = id2label
-            config.label2id = label2id
-            config.output_hidden_states = True
+    model_cfg = model_or_cfg
+    name, pretrained, pretrained_encoder = _parse_model_entry(model_cfg, role)
+    if not name:
+        raise ValueError(f"Missing model name for role='{role}'")
 
-            self.model = SegformerForSemanticSegmentation.from_pretrained(hf_model_name, config=config, ignore_mismatched_sizes=True)
-
-        def extract_feature(self, x):
-            outputs = self.model(x, output_hidden_states=True, return_dict=True)
-            feats = list(outputs.hidden_states)
-            attens = list(outputs.hidden_states)
-            logits = outputs.logits
-            return feats, attens, logits
-
-        def forward(self, x):
-            return self.model(x).logits
-
-    return SegformerWrapper(model_name, num_classes)
+    ignore_index = int(model_cfg.get("ignore_index", 255))
+    return build_segformer(
+        name,
+        model_cfg["num_classes"],
+        pretrained=pretrained,
+        pretrained_encoder=pretrained_encoder,
+        ignore_index=ignore_index,
+    )
 
 
 def build_optimizer(distiller, cfg):
