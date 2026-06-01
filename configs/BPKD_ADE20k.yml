@@ -43,11 +43,11 @@ distill:
   ce_weight: 1.0
   kd_weight: 1.0
 
-  lambda_body: 20.0
-  lambda_edge: 50.0
+  lambda_body: 2
+  lambda_edge: 5
   alpha_edge: 2.0
+  temperature: 1.5
 
-  temperature: 4.0
   ignore_index: 255
 
   edge_width: 7
