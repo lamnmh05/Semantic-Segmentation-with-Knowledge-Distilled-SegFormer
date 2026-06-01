@@ -80,8 +80,6 @@ class BPKD(Distiller):
 
     def get_edge_mask(self, target, num_classes, logits_size):
         """
-        Get soft edge mask M_E
-
         Args:
             target:
                 GT segmentation mask, shape [B, H, W].
@@ -183,67 +181,65 @@ class BPKD(Distiller):
 
     def edge_loss(self, logits_student, logits_teacher, edge_mask):
         """
-        Edge Knowledge Representation.
+        Edge Knowledge Representation theo BPKD.
+
         Args:
-            logits_student:
-                [B, C, H', W']
-            logits_teacher:
-                [B, C, H', W']
-            edge_mask:
-                M_E, [B, C, H', W']
+            logits_student: [B, C, H', W']
+            logits_teacher: [B, C, H', W']
+            edge_mask:      M_E, [B, C, H', W']
 
         Returns:
-            loss_edge:
-                scalar tensor.
-
-        PRM:
-            Z_E^S = Z^S * M_E
-            Z_E^T = Z^T * M_E
-
-            phi_i = KL(
-                softmax(Z_E^T_i / T),
-                softmax(Z_E^S_i / T)
-            )
-
-        POM:
-            L_E = sum_c alpha_c / n_c * sum_i phi_i * M_E,c,i
+            loss_edge: scalar tensor
         """
 
         T = self.temperature
 
         B, C, H, W = logits_student.shape
 
-        # PRM: mask logits trước khi tính KL.
+        edge_mask = edge_mask.to(
+            device=logits_student.device,
+            dtype=logits_student.dtype,
+        )
+
+        # Nếu edge_mask chưa cùng size logits thì resize về H', W'
+        if edge_mask.shape[-2:] != (H, W):
+            edge_mask = F.interpolate(
+                edge_mask,
+                size=(H, W),
+                mode="bilinear",
+                align_corners=False,
+            )
+
+        # PRM: Pre-Mask Filtering
         s_edge = logits_student * edge_mask
-        t_edge = logits_teacher * edge_mask
+        t_edge = logits_teacher.detach() * edge_mask
 
         log_prob_s = F.log_softmax(s_edge / T, dim=1)
         prob_t = F.softmax(t_edge / T, dim=1)
 
-        # KL theo từng pixel:
-        # kl_map_class: [B, C, H, W]
-        # kl_map_pixel: [B, 1, H, W]
+        # KL theo từng class, chưa sum qua class
+        # shape: [B, C, H, W]
         kl_map_class = F.kl_div(
             log_prob_s,
             prob_t,
             reduction="none",
         ) * (T * T)
 
-        kl_map_pixel = kl_map_class.sum(dim=1, keepdim=True)
+        # POM: Post-Mask Filtering
 
-        # POM:
-        # Lặp lại KL pixel cho từng class rồi nhân với mask của class đó.
-        # edge_mask: [B, C, H, W]
-        weighted_kl = kl_map_pixel * edge_mask
+        # n_c là số pixel non-zero của edge mask class c
+        # shape: [B, C]
+        n_c = (edge_mask > 0).float().sum(dim=(2, 3)).clamp_min(1.0)
 
-        # n_c: số pixel edge của từng class.
-        # [B, C]
-        n_c = edge_mask.sum(dim=(2, 3)).clamp_min(1.0)
+        # Nhân KL từng class với edge mask từng class
+        # shape sau sum: [B, C]
+        loss_per_class = (kl_map_class * edge_mask).sum(dim=(2, 3)) / n_c
 
-        # [B, C]
-        loss_per_class = weighted_kl.sum(dim=(2, 3)) / n_c
+        # Nếu chưa có alpha_c riêng cho từng class thì tạm xem alpha_c = 1
+        loss_edge = loss_per_class.sum(dim=1).mean()
 
-        loss_edge = self.alpha_edge * loss_per_class.sum(dim=1).mean()
+        # alpha_edge ở đây nên hiểu là lambda/loss weight tổng thể
+        loss_edge = self.alpha_edge * loss_edge
 
         return loss_edge
 
