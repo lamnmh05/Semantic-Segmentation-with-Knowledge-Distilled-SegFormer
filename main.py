@@ -7,15 +7,16 @@ from src.train import load_config, get_dataset, get_model, build_optimizer, load
 from src.distillers.attn_fd import AttnFD
 from src.distillers.combine import Combine
 from src.distillers.fit_net import FitNet
+from src.distillers.supervised import SupervisedSegformer
 from src.engine.trainer import Trainer
 from src.eval import run_student_evaluation
 
 def main():
     if len(sys.argv) == 1:
         print("No arguments provided. Please run with --config path/to/config.yml")
-        print("Example: python main.py --config configs/AttnFD_ADE20k.yml --data_path /kaggle/input/dataset --epochs 50")
+        print("Example: python main.py --config configs/Segformer_ADE20k.yml --data_path /kaggle/input/dataset --epochs 50")
 
-    parser = argparse.ArgumentParser(description="Knowledge Distillation for SegFormer")
+    parser = argparse.ArgumentParser(description="SegFormer training and knowledge distillation")
     parser.add_argument("--config", type=str, required=True, help="Path to config YAML file")
     parser.add_argument("--data_path", type=str, default=None, help="Override path to dataset root")
     parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
@@ -67,10 +68,7 @@ def main():
     val_loader = DataLoader(val_dataset, shuffle=False, **loader_kwargs)
 
     num_classes = cfg["model"]["num_classes"]
-    teacher = get_model(cfg["model"]["teacher"], num_classes).to(device)
-    student = get_model(cfg["model"]["student"], num_classes).to(device)
-
-    load_checkpoint(teacher, cfg["model"].get("teacher_checkpoint"), device)
+    student = get_model(cfg["model"], role="student").to(device)
     student_ckpt = args.student_ckpt or cfg["model"].get("student_checkpoint")
     load_checkpoint(student, student_ckpt, device)
 
@@ -87,21 +85,29 @@ def main():
         )
         return
 
-    distill_method = cfg["distill"]["method"]
-    if distill_method == "FitNet":
-        distiller = FitNet(student, teacher, cfg)
-    elif distill_method == "AttnFD":
-        distiller = AttnFD(student, teacher, cfg)
-    elif distill_method in ("MLP", "MLPFD"):
-        from src.distillers.mlp import MLPFD
-        distiller = MLPFD(student, teacher, cfg)
-    elif distill_method == "BPKD":
-        from src.distillers.bpkd import BPKD
-        distiller = BPKD(student, teacher, cfg)
-    elif distill_method == "Combine":
-        distiller = Combine(student, teacher, cfg)
+    distill_cfg = cfg.get("distill") or {}
+    distill_method = str(distill_cfg.get("method", "")).strip().lower()
+
+    if distill_method in ("", "none", "supervised", "finetune", "finetune_only"):
+        distiller = SupervisedSegformer(student, cfg)
     else:
-        raise ValueError(f"Unknown distillation method: {distill_method}")
+        teacher = get_model(cfg["model"], role="teacher").to(device)
+        load_checkpoint(teacher, cfg["model"].get("teacher_checkpoint"), device)
+
+        if distill_method == "fitnet":
+            distiller = FitNet(student, teacher, cfg)
+        elif distill_method == "attnfd":
+            distiller = AttnFD(student, teacher, cfg)
+        elif distill_method in ("mlp", "mlpfd"):
+            from src.distillers.mlp import MLPFD
+            distiller = MLPFD(student, teacher, cfg)
+        elif distill_method == "bpkd":
+            from src.distillers.bpkd import BPKD
+            distiller = BPKD(student, teacher, cfg)
+        elif distill_method == "combine":
+            distiller = Combine(student, teacher, cfg)
+        else:
+            raise ValueError(f"Unknown distillation method: {distill_cfg.get('method')}")
 
     distiller = distiller.to(device)
     optimizer = build_optimizer(distiller, cfg)
