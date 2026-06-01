@@ -50,4 +50,4 @@ distill:
   temperature: 4.0
   ignore_index: 255
 
-  boundary_radius: 3
+  edge_width: 7
