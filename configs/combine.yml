@@ -40,19 +40,22 @@ train:
 distill:
   method: "Combine"
 
+  # Loss weight
   lambda_ce: 1.0
   lambda_mlp: 2e-5
   lambda_bpkd: 1.0
-
+  
+  # MLP config
   feat_layer: 3
   student_channels: [32, 64, 160, 256]
   teacher_channels: [64, 128, 320, 512]
   mlp_hidden_channel: 512
 
-  lambda_body: 20.0
-  lambda_edge: 50.0
+  # BPKD config
+  lambda_body: 2
+  lambda_edge: 5
   alpha_edge: 2.0
-  temperature: 4.0
-  boundary_radius: 3
+  temperature: 1.5
+  edge_width: 7
 
   ignore_index: 255
