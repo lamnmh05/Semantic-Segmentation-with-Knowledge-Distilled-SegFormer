@@ -47,7 +47,8 @@ distill:
   lambda_edge: 5
   alpha_edge: 2.0
   temperature: 1.5
-
+  edge_width: 7
+  
   ignore_index: 255
 
-  edge_width: 7
+  

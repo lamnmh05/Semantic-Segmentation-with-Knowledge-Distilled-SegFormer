@@ -45,7 +45,18 @@ class Combine(Distiller):
         self.alpha_edge = self._to_scalar(distill.get("alpha_edge", 2.0), "alpha_edge")
         self.temperature = self._to_scalar(distill.get("temperature", 4.0), "temperature")
         self.ignore_index = int(distill.get("ignore_index", 255))
-        self.boundary_radius = int(distill.get("boundary_radius", 3))
+
+        edge_width = distill.get("edge_width", None)
+        if edge_width is None:
+            self.boundary_radius = int(
+                self._to_scalar(distill.get("boundary_radius", 3), "boundary_radius")
+            )
+            self.edge_width = 2 * self.boundary_radius + 1
+        else:
+            self.edge_width = int(self._to_scalar(edge_width, "edge_width"))
+            if self.edge_width % 2 == 0:
+                raise ValueError("edge_width must be odd, e.g. 3, 5, 7, 9.")
+            self.boundary_radius = self.edge_width // 2
 
         self.feat_layer = distill.get("feat_layer", 2)
 
@@ -105,6 +116,25 @@ class Combine(Distiller):
             )
         return logits
 
+    def _pool_to_logits(self, x, logits_size):
+        H, W = x.shape[-2:]
+        H_logit, W_logit = logits_size
+
+        if H == H_logit and W == W_logit:
+            return x
+
+        if H % H_logit == 0 and W % W_logit == 0:
+            stride_h = H // H_logit
+            stride_w = W // W_logit
+
+            return F.avg_pool2d(
+                x,
+                kernel_size=(stride_h, stride_w),
+                stride=(stride_h, stride_w),
+            )
+
+        return F.adaptive_avg_pool2d(x, output_size=logits_size)
+
     def _prepare_target(self, target):
         if target.dim() == 4:
             target = target.squeeze(1)
@@ -117,7 +147,7 @@ class Combine(Distiller):
         return target.long()
 
     def feature_loss(self, s_feats, t_feats):
-        idx = int(self.feat_layer_idx)
+        idx = int(self.feat_layer)
         
         f_s = s_feats[idx]
         f_t = t_feats[idx]
@@ -134,7 +164,6 @@ class Combine(Distiller):
         target = self._prepare_target(target)
 
         B, H, W = target.shape
-        H_logit, W_logit = logits_size
 
         valid_mask = target != self.ignore_index
 
@@ -146,9 +175,10 @@ class Combine(Distiller):
             num_classes=num_classes,
         ).permute(0, 3, 1, 2).float()
 
-        gt_onehot = gt_onehot * valid_mask.unsqueeze(1).float()
+        valid_mask_float = valid_mask.unsqueeze(1).float()
+        gt_onehot = gt_onehot * valid_mask_float
 
-        kernel_size = 2 * self.boundary_radius + 1
+        kernel_size = self.edge_width
         padding = self.boundary_radius
 
         dilation = F.max_pool2d(
@@ -166,33 +196,40 @@ class Combine(Distiller):
         )
 
         gt_edge = (dilation - erosion).clamp(min=0.0, max=1.0)
-        gt_edge = gt_edge * valid_mask.unsqueeze(1).float()
+        gt_edge = gt_edge * valid_mask_float
 
-        if H % H_logit == 0 and W % W_logit == 0:
-            stride_h = H // H_logit
-            stride_w = W // W_logit
+        edge_mask = self._pool_to_logits(gt_edge, logits_size).clamp(min=0.0, max=1.0)
+        valid_mask_logits = self._pool_to_logits(valid_mask_float, logits_size).clamp(
+            min=0.0, max=1.0
+        )
 
-            edge_mask = F.avg_pool2d(
-                gt_edge,
-                kernel_size=(stride_h, stride_w),
-                stride=(stride_h, stride_w),
-            )
-        else:
-            edge_mask = F.adaptive_avg_pool2d(
-                gt_edge,
-                output_size=(H_logit, W_logit),
-            )
+        edge_mask = edge_mask * valid_mask_logits
 
-        return edge_mask.clamp(min=0.0, max=1.0)
+        return edge_mask, valid_mask_logits
 
     def edge_loss(self, logits_student, logits_teacher, edge_mask):
         T = self.temperature
 
-        s_edge = logits_student * edge_mask
-        t_edge = logits_teacher * edge_mask
+        B, C, H, W = logits_student.shape
 
-        log_prob_s = F.log_softmax(s_edge / T, dim=1)
-        prob_t = F.softmax(t_edge / T, dim=1)
+        edge_mask = edge_mask.to(
+            device=logits_student.device,
+            dtype=logits_student.dtype,
+        )
+
+        if edge_mask.shape[-2:] != (H, W):
+            edge_mask = F.interpolate(
+                edge_mask,
+                size=(H, W),
+                mode="bilinear",
+                align_corners=False,
+            )
+
+        z_s_edge = logits_student * edge_mask
+        z_t_edge = logits_teacher.detach() * edge_mask
+
+        log_prob_s = F.log_softmax(z_s_edge / T, dim=1)
+        prob_t = F.softmax(z_t_edge / T, dim=1)
 
         kl_map_class = F.kl_div(
             log_prob_s,
@@ -200,36 +237,64 @@ class Combine(Distiller):
             reduction="none",
         ) * (T * T)
 
-        kl_map_pixel = kl_map_class.sum(dim=1, keepdim=True)
-        weighted_kl = kl_map_pixel * edge_mask
-        n_c = edge_mask.sum(dim=(2, 3)).clamp_min(1.0)
-        loss_per_class = weighted_kl.sum(dim=(2, 3)) / n_c
+        phi_pixel = kl_map_class.sum(dim=1, keepdim=True)
+        phi_repeat = phi_pixel.expand(-1, C, -1, -1)
 
-        return self.alpha_edge * loss_per_class.sum(dim=1).mean()
+        n_c = (edge_mask > 0).float().sum(dim=(2, 3)).clamp_min(1.0)
+        loss_per_class = (phi_repeat * edge_mask).sum(dim=(2, 3)) / n_c
+        loss_edge = loss_per_class.sum(dim=1).mean()
 
-    def body_loss(self, logits_student, logits_teacher, edge_mask):
+        return self.alpha_edge * loss_edge
+
+    def body_loss(self, logits_student, logits_teacher, edge_mask, valid_mask_logits):
         T = self.temperature
 
         B, C, H, W = logits_student.shape
 
-        body_mask = 1.0 - edge_mask
+        edge_mask = edge_mask.to(
+            device=logits_student.device,
+            dtype=logits_student.dtype,
+        )
 
-        s_body = logits_student * body_mask
-        t_body = logits_teacher * body_mask
+        valid_mask_logits = valid_mask_logits.to(
+            device=logits_student.device,
+            dtype=logits_student.dtype,
+        )
 
-        s_body = s_body.view(B, C, -1)
-        t_body = t_body.view(B, C, -1)
+        if edge_mask.shape[-2:] != (H, W):
+            edge_mask = F.interpolate(
+                edge_mask,
+                size=(H, W),
+                mode="bilinear",
+                align_corners=False,
+            )
 
-        log_prob_s = F.log_softmax(s_body / T, dim=2)
-        prob_t = F.softmax(t_body / T, dim=2)
+        if valid_mask_logits.shape[-2:] != (H, W):
+            valid_mask_logits = F.interpolate(
+                valid_mask_logits,
+                size=(H, W),
+                mode="bilinear",
+                align_corners=False,
+            )
 
-        kl_per_channel = F.kl_div(
+        body_mask = (1.0 - edge_mask) * valid_mask_logits
+
+        z_s_body = logits_student * body_mask
+        z_t_body = logits_teacher.detach() * body_mask
+
+        z_s_body = z_s_body.flatten(2)
+        z_t_body = z_t_body.flatten(2)
+
+        log_prob_s = F.log_softmax(z_s_body / T, dim=2)
+        prob_t = F.softmax(z_t_body / T, dim=2)
+
+        kl_map = F.kl_div(
             log_prob_s,
             prob_t,
             reduction="none",
-        ).sum(dim=2)
+        )
 
-        return (T * T) * kl_per_channel.sum(dim=1).mean() / C
+        return (T * T) * kl_map.sum(dim=2).sum(dim=1).mean() / C
 
     def bpkd_loss(self, logits_student, logits_teacher, target):
         if logits_student.dim() != 4:
@@ -246,7 +311,7 @@ class Combine(Distiller):
         logits_teacher = self._resize_logits(logits_teacher, logits_size)
         num_classes = logits_student.shape[1]
 
-        edge_mask = self.get_edge_mask(
+        edge_mask, valid_mask_logits = self.get_edge_mask(
             target=target,
             num_classes=num_classes,
             logits_size=logits_size,
@@ -261,10 +326,20 @@ class Combine(Distiller):
             logits_student=logits_student,
             logits_teacher=logits_teacher,
             edge_mask=edge_mask,
+            valid_mask_logits=valid_mask_logits,
         )
 
-        loss_bpkd = self.lambda_body * loss_body + self.lambda_edge * loss_edge
-        return loss_bpkd, loss_body, loss_edge
+        loss_body_w = self.lambda_body * loss_body
+        loss_edge_w = self.lambda_edge * loss_edge
+        loss_bpkd = loss_body_w + loss_edge_w
+
+        return {
+            "loss_bpkd": loss_bpkd,
+            "loss_body": loss_body,
+            "loss_edge": loss_edge,
+            "loss_body_w": loss_body_w,
+            "loss_edge_w": loss_edge_w,
+        }
 
     def forward_train(self, image, target, **kwargs):
         target = self._prepare_target(target)
@@ -288,12 +363,13 @@ class Combine(Distiller):
         loss_mlp_raw = self.feature_loss(s_feats, t_feats)
         loss_mlp = self.mlp_loss_weight * loss_mlp_raw
 
-        loss_bpkd_raw, loss_body_raw, loss_edge_raw = self.bpkd_loss(
+        loss_dict = self.bpkd_loss(
             logits_student=logits_student,
             logits_teacher=logits_teacher,
             target=target,
         )
-        loss_bpkd = self.bpkd_loss_weight * loss_bpkd_raw
+
+        loss_bpkd = self.bpkd_loss_weight * loss_dict["loss_bpkd"]
 
         loss_kd = loss_mlp + loss_bpkd
         loss_total = loss_ce + loss_kd
@@ -301,8 +377,10 @@ class Combine(Distiller):
         return logits_student_for_ce, {
             "loss_ce": loss_ce,
             "loss_mlp": loss_mlp,
-            "loss_body": loss_body_raw,
-            "loss_edge": loss_edge_raw,
+            "loss_body": loss_dict["loss_body"],
+            "loss_edge": loss_dict["loss_edge"],
+            "loss_body_w": loss_dict["loss_body_w"],
+            "loss_edge_w": loss_dict["loss_edge_w"],
             "loss_bpkd": loss_bpkd,
             "loss_kd": loss_kd,
             "loss_total": loss_total,
