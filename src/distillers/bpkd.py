@@ -8,21 +8,31 @@ from .base import Distiller
 class BPKD(Distiller):
     """
     Boundary Privileged Knowledge Distillation for Semantic Segmentation.
+
+    Paper pipeline:
+
         1. Edge mask:
             GT_edge = dilation(GT) - erosion(GT)
             M_E = AvgPool2D(GT_edge)
 
-        2. Logit decoupling:
+        2. Decouple logits:
             Z_E = Z * M_E
             Z_B = Z * (1 - M_E)
 
-        3. Distillation loss:
-            loss_bpkd = lambda_body * loss_body
-                      + lambda_edge * loss_edge
+        3. Edge loss:
+            PRM:
+                Z_E^S = Z^S * M_E
+                Z_E^T = Z^T * M_E
 
-        4. Total loss:
-            loss_total = ce_weight * CE
-                       + kd_weight * loss_bpkd
+            POM:
+                L_E = sum_c alpha / n_c * sum_i phi_i * M_E,c,i
+
+        4. Body loss:
+            Channel-wise distillation on spatial dimension.
+
+        5. Final:
+            L_BPKD = lambda_body * L_B + lambda_edge * L_E
+            L_total = CE + L_BPKD
     """
 
     def __init__(self, student, teacher, cfg):
@@ -33,27 +43,41 @@ class BPKD(Distiller):
         self.ce_loss_weight = distill.get("ce_weight", 1.0)
         self.kd_loss_weight = distill.get("kd_weight", 1.0)
 
+
         self.lambda_body = distill.get("lambda_body", 20.0)
         self.lambda_edge = distill.get("lambda_edge", 50.0)
         self.alpha_edge = distill.get("alpha_edge", 2.0)
 
-
         self.temperature = distill.get("temperature", 4.0)
         self.ignore_index = distill.get("ignore_index", 255)
 
-        # "adjustable Trimap"
-        # boundary_radius = 1 -> kernel 3x3
-        # boundary_radius = 2 -> kernel 5x5
-        # boundary_radius = 3 -> kernel 7x7
-        self.boundary_radius = distill.get("boundary_radius", 3)
+        self.edge_width = distill.get("edge_width", 7)
 
+        if self.edge_width % 2 == 0:
+            raise ValueError("edge_width must be odd, e.g. 3, 5, 7, 9.")
+
+        self.boundary_radius = self.edge_width // 2
 
     def get_extra_parameters(self):
         return 0
 
+    def _prepare_target(self, target):
+        """
+        Convert target to [B, H, W].
+        """
+        if target.dim() == 4:
+            target = target.squeeze(1)
+
+        if target.dim() != 3:
+            raise ValueError(
+                f"target must be [B,H,W] or [B,1,H,W], got {target.shape}"
+            )
+
+        return target.long()
+
     def _resize_logits(self, logits, size):
         """
-        [B, C, H, W] -> [B, C, H_new, W_new]
+        Resize logits to given spatial size.
         """
         if logits.shape[-2:] != size:
             logits = F.interpolate(
@@ -64,70 +88,73 @@ class BPKD(Distiller):
             )
         return logits
 
-    def _prepare_target(self, target):
+    def _pool_to_logits(self, x, logits_size):
         """
-        Normalize target shape to [B, H, W].
+        Downsample mask from GT size to logits size using AvgPool2D,
+        following the paper.
         """
-        if target.dim() == 4:
-            target = target.squeeze(1)
+        H, W = x.shape[-2:]
+        H_logit, W_logit = logits_size
 
-        if target.dim() != 3:
-            raise ValueError(
-                f"target must have shape [B, H, W] or [B, 1, H, W], got {target.shape}"
+        if H == H_logit and W == W_logit:
+            return x
+
+        if H % H_logit == 0 and W % W_logit == 0:
+            stride_h = H // H_logit
+            stride_w = W // W_logit
+
+            return F.avg_pool2d(
+                x,
+                kernel_size=(stride_h, stride_w),
+                stride=(stride_h, stride_w),
             )
 
-        return target.long()
+        return F.adaptive_avg_pool2d(x, output_size=logits_size)
 
     def get_edge_mask(self, target, num_classes, logits_size):
         """
+        Generate soft edge mask M_E.
+
         Args:
             target:
-                GT segmentation mask, shape [B, H, W].
+                [B, H, W]
             num_classes:
-                Number of class C.
+                C
             logits_size:
-                Spatial size of logits (H', W').
+                [H', W']
 
         Returns:
             edge_mask:
-                M_E, shape [B, C, H', W'].
-                between [0, 1].
-
-        Pipeline:
-            target [B,H,W]
-                -> one-hot [B,C,H,W]
-                -> dilation - erosion
-                -> GT_edge [B,C,H,W]
-                -> AvgPool2D
-                -> M_E [B,C,H',W']
+                M_E, [B, C, H', W']
+            valid_mask_logits:
+                [B, 1, H', W']
         """
 
         target = self._prepare_target(target)
 
         B, H, W = target.shape
-        H_logit, W_logit = logits_size
 
         valid_mask = target != self.ignore_index  # [B, H, W]
 
-        # Đổi ignore_index thành 0 tạm thời để one-hot không lỗi.
         target_safe = target.clone()
         target_safe[~valid_mask] = 0
 
-        # One-hot:
-        # [B, H, W] -> [B, H, W, C] -> [B, C, H, W]
+        # One-hot GT: [B,H,W] -> [B,C,H,W]
         gt_onehot = F.one_hot(
             target_safe,
             num_classes=num_classes,
         ).permute(0, 3, 1, 2).float()
 
-        # Xóa vùng ignore khỏi one-hot.
-        gt_onehot = gt_onehot * valid_mask.unsqueeze(1).float()
+        valid_mask_float = valid_mask.unsqueeze(1).float()
 
-        # Kernel cho trimap boundary.
-        kernel_size = 2 * self.boundary_radius + 1
+        # Remove ignore region from GT one-hot
+        gt_onehot = gt_onehot * valid_mask_float
+
+        # Adjustable Trimap
+        kernel_size = self.edge_width
         padding = self.boundary_radius
 
-        # dilation(GT)
+        # Dilation
         dilation = F.max_pool2d(
             gt_onehot,
             kernel_size=kernel_size,
@@ -135,8 +162,7 @@ class BPKD(Distiller):
             padding=padding,
         )
 
-        # erosion(GT)
-        # Với binary mask:
+        # Erosion for binary mask:
         # erosion(x) = 1 - dilation(1 - x)
         erosion = 1.0 - F.max_pool2d(
             1.0 - gt_onehot,
@@ -149,47 +175,34 @@ class BPKD(Distiller):
         gt_edge = dilation - erosion
         gt_edge = gt_edge.clamp(min=0.0, max=1.0)
 
-        # Không tính edge ở vùng ignore.
-        gt_edge = gt_edge * valid_mask.unsqueeze(1).float()
+        # Remove ignore region
+        gt_edge = gt_edge * valid_mask_float
 
-        # AvgPool2D để đưa GT_edge về cùng size với logits prediction.
-        #
-        # Paper:
-        #   GT_edge: [B, C, H, W]
-        #   M_E:     [B, C, H', W']
-        #
-        # Nếu H/H' và W/W' chia hết, dùng avg_pool2d đúng output stride.
-        # Nếu không chia hết, dùng adaptive_avg_pool2d để đảm bảo shape.
-        if H % H_logit == 0 and W % W_logit == 0:
-            stride_h = H // H_logit
-            stride_w = W // W_logit
-
-            edge_mask = F.avg_pool2d(
-                gt_edge,
-                kernel_size=(stride_h, stride_w),
-                stride=(stride_h, stride_w),
-            )
-        else:
-            edge_mask = F.adaptive_avg_pool2d(
-                gt_edge,
-                output_size=(H_logit, W_logit),
-            )
-
+        # Paper: M_E = AvgPool2D(GT_edge)
+        edge_mask = self._pool_to_logits(gt_edge, logits_size)
         edge_mask = edge_mask.clamp(min=0.0, max=1.0)
 
-        return edge_mask
+        # Downsample valid mask too, so KD ignores ignore_index regions
+        valid_mask_logits = self._pool_to_logits(valid_mask_float, logits_size)
+        valid_mask_logits = valid_mask_logits.clamp(min=0.0, max=1.0)
+
+        edge_mask = edge_mask * valid_mask_logits
+
+        return edge_mask, valid_mask_logits
 
     def edge_loss(self, logits_student, logits_teacher, edge_mask):
         """
-        Edge Knowledge Representation theo BPKD.
+        Edge Knowledge Representation.
 
-        Args:
-            logits_student: [B, C, H', W']
-            logits_teacher: [B, C, H', W']
-            edge_mask:      M_E, [B, C, H', W']
-
-        Returns:
-            loss_edge: scalar tensor
+        Paper Figure 2:
+            Pre-Mask Filtering
+            -> Softmax(C)
+            -> KL divergence
+            -> Sum(C)
+            -> Repeat(C)
+            -> Post-Mask Filtering
+            -> Apply alpha
+            -> Sum / mask pixels
         """
 
         T = self.temperature
@@ -201,7 +214,6 @@ class BPKD(Distiller):
             dtype=logits_student.dtype,
         )
 
-        # Nếu edge_mask chưa cùng size logits thì resize về H', W'
         if edge_mask.shape[-2:] != (H, W):
             edge_mask = F.interpolate(
                 edge_mask,
@@ -211,90 +223,109 @@ class BPKD(Distiller):
             )
 
         # PRM: Pre-Mask Filtering
-        s_edge = logits_student * edge_mask
-        t_edge = logits_teacher.detach() * edge_mask
+        z_s_edge = logits_student * edge_mask
+        z_t_edge = logits_teacher.detach() * edge_mask
 
-        log_prob_s = F.log_softmax(s_edge / T, dim=1)
-        prob_t = F.softmax(t_edge / T, dim=1)
+        log_prob_s = F.log_softmax(z_s_edge / T, dim=1)
+        prob_t = F.softmax(z_t_edge / T, dim=1)
 
-        # KL theo từng class, chưa sum qua class
-        # shape: [B, C, H, W]
+        # KL per class: [B, C, H, W]
         kl_map_class = F.kl_div(
             log_prob_s,
             prob_t,
             reduction="none",
         ) * (T * T)
 
-        # POM: Post-Mask Filtering
+        # Paper Figure 2: Sum(C)
+        # [B, C, H, W] -> [B, 1, H, W]
+        phi_pixel = kl_map_class.sum(dim=1, keepdim=True)
 
-        # n_c là số pixel non-zero của edge mask class c
-        # shape: [B, C]
+        # Paper Figure 2: Repeat(nC)
+        # [B, 1, H, W] -> [B, C, H, W]
+        phi_repeat = phi_pixel.expand(-1, C, -1, -1)
+
+        # POM: Post-Mask Filtering
+        # n_c: number of non-zero pixels in M_E,c
         n_c = (edge_mask > 0).float().sum(dim=(2, 3)).clamp_min(1.0)
 
-        # Nhân KL từng class với edge mask từng class
-        # shape sau sum: [B, C]
-        loss_per_class = (kl_map_class * edge_mask).sum(dim=(2, 3)) / n_c
+        # L_E,c = alpha / n_c * sum_i phi_i * M_E,c,i
+        loss_per_class = (phi_repeat * edge_mask).sum(dim=(2, 3)) / n_c
 
-        # Nếu chưa có alpha_c riêng cho từng class thì tạm xem alpha_c = 1
+        # Sum over classes, mean over batch
         loss_edge = loss_per_class.sum(dim=1).mean()
 
-        # alpha_edge ở đây nên hiểu là lambda/loss weight tổng thể
+        # Edge loss inner weight alpha
         loss_edge = self.alpha_edge * loss_edge
 
         return loss_edge
 
-    def body_loss(self, logits_student, logits_teacher, edge_mask):
+    def body_loss(self, logits_student, logits_teacher, edge_mask, valid_mask_logits):
         """
         Body Knowledge Representation.
 
         Paper:
             Z_B = Z * (1 - M_E)
 
-        Body loss dùng channel-wise distillation:
-            Với mỗi channel/class c, softmax trên spatial dimension H'W'.
-
-        Args:
-            logits_student:
-                [B, C, H', W']
-            logits_teacher:
-                [B, C, H', W']
-            edge_mask:
-                [B, C, H', W']
-
-        Returns:
-            loss_body:
-                scalar tensor.
+        Body loss:
+            Channel-wise distillation.
+            Softmax is applied on spatial dimension H'W',
+            not on class dimension C.
         """
 
         T = self.temperature
 
         B, C, H, W = logits_student.shape
 
-        body_mask = 1.0 - edge_mask
+        edge_mask = edge_mask.to(
+            device=logits_student.device,
+            dtype=logits_student.dtype,
+        )
 
-        s_body = logits_student * body_mask
-        t_body = logits_teacher * body_mask
+        valid_mask_logits = valid_mask_logits.to(
+            device=logits_student.device,
+            dtype=logits_student.dtype,
+        )
 
-        # Flatten spatial dimension:
+        if edge_mask.shape[-2:] != (H, W):
+            edge_mask = F.interpolate(
+                edge_mask,
+                size=(H, W),
+                mode="bilinear",
+                align_corners=False,
+            )
+
+        if valid_mask_logits.shape[-2:] != (H, W):
+            valid_mask_logits = F.interpolate(
+                valid_mask_logits,
+                size=(H, W),
+                mode="bilinear",
+                align_corners=False,
+            )
+
+        # Z_B = Z * (1 - M_E)
+        body_mask = (1.0 - edge_mask) * valid_mask_logits
+
+        z_s_body = logits_student * body_mask
+        z_t_body = logits_teacher.detach() * body_mask
+
         # [B, C, H, W] -> [B, C, H*W]
-        s_body = s_body.view(B, C, -1)
-        t_body = t_body.view(B, C, -1)
+        z_s_body = z_s_body.flatten(2)
+        z_t_body = z_t_body.flatten(2)
 
         # Channel-wise distillation:
-        # softmax trên spatial dimension, không phải class dimension.
-        log_prob_s = F.log_softmax(s_body / T, dim=2)
-        prob_t = F.softmax(t_body / T, dim=2)
+        # softmax over spatial dimension
+        log_prob_s = F.log_softmax(z_s_body / T, dim=2)
+        prob_t = F.softmax(z_t_body / T, dim=2)
 
-        # KL theo spatial distribution của từng channel:
-        # [B, C, H*W] -> sum spatial -> [B, C]
-        kl_per_channel = F.kl_div(
+        # KL per spatial position
+        kl_map = F.kl_div(
             log_prob_s,
             prob_t,
             reduction="none",
-        ).sum(dim=2)
+        )
 
-        # Paper có hệ số T^2 / C.
-        loss_body = (T * T) * kl_per_channel.sum(dim=1).mean() / C
+        # Paper: T^2 / C * sum_c sum_i KL
+        loss_body = (T * T) * kl_map.sum(dim=2).sum(dim=1).mean() / C
 
         return loss_body
 
@@ -302,32 +333,29 @@ class BPKD(Distiller):
         """
         Full BPKD loss:
 
-            L_BPKD = lambda_body * L_B
-                   + lambda_edge * L_E
-
-        Lưu ý:
-            - Không resize logits_student lên target size cho KD.
-            - Thay vào đó, tạo edge_mask từ GT rồi AvgPool xuống size logits.
+            L_BPKD = lambda_body * L_B + lambda_edge * L_E
         """
 
         if logits_student.dim() != 4:
             raise ValueError(
-                f"logits_student must have shape [B, C, H, W], got {logits_student.shape}"
+                f"logits_student must be [B,C,H,W], got {logits_student.shape}"
             )
 
         if logits_teacher.dim() != 4:
             raise ValueError(
-                f"logits_teacher must have shape [B, C, H, W], got {logits_teacher.shape}"
+                f"logits_teacher must be [B,C,H,W], got {logits_teacher.shape}"
             )
 
-        # Đưa teacher logits về cùng size với student logits nếu khác size.
         logits_size = logits_student.shape[-2:]
-        logits_teacher = self._resize_logits(logits_teacher, logits_size)
+
+        logits_teacher = self._resize_logits(
+            logits_teacher,
+            logits_size,
+        )
 
         num_classes = logits_student.shape[1]
 
-        # M_E: [B, C, H', W']
-        edge_mask = self.get_edge_mask(
+        edge_mask, valid_mask_logits = self.get_edge_mask(
             target=target,
             num_classes=num_classes,
             logits_size=logits_size,
@@ -343,16 +371,24 @@ class BPKD(Distiller):
             logits_student=logits_student,
             logits_teacher=logits_teacher,
             edge_mask=edge_mask,
+            valid_mask_logits=valid_mask_logits,
         )
 
-        loss_bpkd = self.lambda_body * loss_body + self.lambda_edge * loss_edge
+        loss_body_w = self.lambda_body * loss_body
+        loss_edge_w = self.lambda_edge * loss_edge
 
-        return loss_bpkd, loss_body, loss_edge
+        loss_bpkd = loss_body_w + loss_edge_w
+
+        return {
+            "loss_bpkd": loss_bpkd,
+            "loss_body": loss_body,
+            "loss_edge": loss_edge,
+            "loss_body_w": loss_body_w,
+            "loss_edge_w": loss_edge_w,
+        }
 
     def forward_train(self, image, target, **kwargs):
         """
-        Training forward.
-
         image:
             [B, 3, H, W]
 
@@ -365,7 +401,9 @@ class BPKD(Distiller):
         with torch.no_grad():
             _, _, logits_teacher = self.teacher.extract_feature(image)
 
-        # CE dùng logits đã resize về size target.
+        target = self._prepare_target(target)
+
+        # CE dùng logits resize về GT size
         logits_student_for_ce = self._resize_logits(
             logits_student,
             target.shape[-2:],
@@ -373,25 +411,27 @@ class BPKD(Distiller):
 
         loss_ce = self.ce_loss_weight * F.cross_entropy(
             logits_student_for_ce,
-            self._prepare_target(target),
+            target,
             ignore_index=self.ignore_index,
         )
 
-        # KD dùng logits gốc, mask sẽ được downsample về size logits.
-        loss_bpkd_raw, loss_body_raw, loss_edge_raw = self.bpkd_loss(
+        # KD dùng logits gốc, mask được AvgPool về size logits
+        loss_dict = self.bpkd_loss(
             logits_student=logits_student,
             logits_teacher=logits_teacher,
             target=target,
         )
 
-        loss_kd = self.kd_loss_weight * loss_bpkd_raw
+        loss_kd = self.kd_loss_weight * loss_dict["loss_bpkd"]
 
         loss_total = loss_ce + loss_kd
 
         return logits_student_for_ce, {
             "loss_ce": loss_ce,
-            "loss_body": loss_body_raw,
-            "loss_edge": loss_edge_raw,
+            "loss_body": loss_dict["loss_body"],
+            "loss_edge": loss_dict["loss_edge"],
+            "loss_body_w": loss_dict["loss_body_w"],
+            "loss_edge_w": loss_dict["loss_edge_w"],
             "loss_kd": loss_kd,
             "loss_total": loss_total,
         }
