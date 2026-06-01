@@ -21,9 +21,9 @@ model:
   student_checkpoint: null
 
 train:
-  max_iters: 80000
-  eval_interval: 2000
-  log_interval: 50
+  max_iters: 32000
+  eval_interval: 8000
+  log_interval: 20
 
   optimizer: "AdamW"
   lr: 0.00006
