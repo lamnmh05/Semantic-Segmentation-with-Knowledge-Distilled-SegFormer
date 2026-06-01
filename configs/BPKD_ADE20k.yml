@@ -1,3 +1,4 @@
+%%writefile '/kaggle/working/Semantic-Segmentation-with-Knowledge-Distilled-SegFormer/configs/BPKD_ADE20k.yml'
 experiment:
   name: "BPKD_ADE20K"
   output_dir: "./checkpoints"
@@ -41,13 +42,13 @@ distill:
   method: "BPKD"
 
   ce_weight: 1.0
-  kd_weight: 1.0
+  kd_weight: 5.0
 
-  lambda_body: 20.0
-  lambda_edge: 50.0
+  lambda_body: 2.0
+  lambda_edge: 4.0
   alpha_edge: 2.0
+  temperature: 2.0
 
-  temperature: 4.0
   ignore_index: 255
 
-  boundary_radius: 3
+  edge_width: 7
