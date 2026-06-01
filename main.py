@@ -24,6 +24,7 @@ def main():
     parser.add_argument("--student_ckpt", type=str, default=None, help="Student checkpoint for eval_only")
     parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
     parser.add_argument("--hint_pretrain_iters", type=int, default=None, help="Override hint pretrain iterations")
+    parser.add_argument("--num_workers", type=int, default=None, help="Override number of workers for DataLoader")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -42,6 +43,8 @@ def main():
         cfg["dataset"]["batch_size"] = args.batch_size
     if args.lr is not None:
         cfg["train"]["lr"] = args.lr
+    if args.num_workers is not None:
+        cfg["dataset"]["num_workers"] = args.num_workers
     if args.hint_pretrain_iters is not None:
         if "distill" not in cfg:
             cfg["distill"] = {}
