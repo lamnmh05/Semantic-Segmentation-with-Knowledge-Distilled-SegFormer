@@ -44,9 +44,9 @@ distill:
   #            + lambda_feat * hierarchical_feature_loss
   #            + lambda_bpkd * boundary_aware_kd_loss
   #            + lambda_uncertainty * confidence_consistency_loss
-  lambda_ce: 1.0
+  lambda_ce: 0.5
   lambda_feat: 0.2
-  lambda_bpkd: 0.1
+  lambda_bpkd: 0.3
   lambda_uncertainty: 0.0
 
   # Hierarchical feature distillation over 4 SegFormer stages
@@ -69,7 +69,7 @@ distill:
   lambda_body: 2.0
   lambda_edge: 4.0
   alpha_edge: 2.0
-  temperature: 2.0
+  temperature: 1.5
   edge_width: 7
 
   # class: use [B, C, H, W] class-wise boundary masks
