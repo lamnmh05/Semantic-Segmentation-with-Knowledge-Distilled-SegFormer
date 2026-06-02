@@ -20,6 +20,9 @@ def remap_state_dict(state_dict, target_keys):
     target_keys_set = set(target_keys)
     new_state = {}
 
+    has_encoder = any("encoder." in k for k in target_keys_set)
+    has_stages = any("stages." in k for k in target_keys_set)
+
     for k, v in state_dict.items():
         if k in target_keys_set:
             new_state[k] = v
@@ -27,41 +30,64 @@ def remap_state_dict(state_dict, target_keys):
 
         new_k = k
 
-        # Map from encoder to stages (if model expects stages)
-        if "encoder.patch_embeddings" in new_k:
-            new_k = re.sub(r"encoder\.patch_embeddings\.(\d+)\.", r"stages.\1.patch_embeddings.", new_k)
-        if "encoder.block" in new_k:
-            new_k = re.sub(r"encoder\.block\.(\d+)\.(\d+)\.", r"stages.\1.blocks.\2.", new_k)
-        if "encoder.layer_norm" in new_k:
-            new_k = re.sub(r"encoder\.layer_norm\.(\d+)\.", r"stages.\1.layer_norm.", new_k)
-        if "encoder.norm" in new_k:
-            new_k = re.sub(r"encoder\.norm\.(\d+)\.", r"stages.\1.layer_norm.", new_k)
+        if has_encoder:
+            # Map from custom (stages) format to HF (encoder) format
+            if "stages." in new_k:
+                new_k = re.sub(r"stages\.(\d+)\.patch_embeddings\.", r"encoder.patch_embeddings.\1.", new_k)
+                new_k = re.sub(r"stages\.(\d+)\.blocks\.(\d+)\.", r"encoder.block.\1.\2.", new_k)
+                new_k = re.sub(r"stages\.(\d+)\.layer_norm\.", r"encoder.layer_norm.\1.", new_k)
+            
+            new_k = new_k.replace("attention.q_proj", "attention.self.query")
+            new_k = new_k.replace("attention.k_proj", "attention.self.key")
+            new_k = new_k.replace("attention.v_proj", "attention.self.value")
+            new_k = new_k.replace("attention.o_proj", "attention.output.dense")
+            new_k = new_k.replace("attention.sequence_reduction.sequence_reduction", "attention.self.sr")
+            new_k = new_k.replace("attention.sequence_reduction.layer_norm", "attention.self.layer_norm")
+            
+            new_k = new_k.replace("mlp.fc1", "mlp.dense1")
+            new_k = new_k.replace("mlp.fc2", "mlp.dense2")
+            new_k = new_k.replace("layernorm_before", "layer_norm_1")
+            new_k = new_k.replace("layernorm_after", "layer_norm_2")
 
-        # Map from stages to encoder (if model expects encoder)
-        if "stages." in new_k:
-            new_k = re.sub(r"stages\.(\d+)\.patch_embeddings\.", r"encoder.patch_embeddings.\1.", new_k)
-            new_k = re.sub(r"stages\.(\d+)\.blocks\.(\d+)\.", r"encoder.block.\1.\2.", new_k)
-            new_k = re.sub(r"stages\.(\d+)\.layer_norm\.", r"encoder.layer_norm.\1.", new_k)
+            if "decode_head.linear_projections" in new_k:
+                new_k = re.sub(r"decode_head\.linear_projections\.(\d+)\.", r"decode_head.linear_c.\1.", new_k)
 
-        new_k = new_k.replace("attention.self.query", "attention.q_proj")
-        new_k = new_k.replace("attention.self.key", "attention.k_proj")
-        new_k = new_k.replace("attention.self.value", "attention.v_proj")
-        new_k = new_k.replace("attention.self.sr", "attention.sequence_reduction.sequence_reduction")
-        new_k = new_k.replace("attention.self.layer_norm", "attention.sequence_reduction.layer_norm")
-        new_k = new_k.replace("attention.output.dense", "attention.o_proj")
+        elif has_stages:
+            # Map from HF (encoder) format to custom (stages) format
+            if "encoder.patch_embeddings" in new_k:
+                new_k = re.sub(r"encoder\.patch_embeddings\.(\d+)\.", r"stages.\1.patch_embeddings.", new_k)
+            if "encoder.block" in new_k:
+                new_k = re.sub(r"encoder\.block\.(\d+)\.(\d+)\.", r"stages.\1.blocks.\2.", new_k)
+            if "encoder.layer_norm" in new_k:
+                new_k = re.sub(r"encoder\.layer_norm\.(\d+)\.", r"stages.\1.layer_norm.", new_k)
+            if "encoder.norm" in new_k:
+                new_k = re.sub(r"encoder\.norm\.(\d+)\.", r"stages.\1.layer_norm.", new_k)
 
-        new_k = new_k.replace("mlp.dense1", "mlp.fc1")
-        new_k = new_k.replace("mlp.dense2", "mlp.fc2")
-        new_k = new_k.replace("layer_norm_1", "layernorm_before")
-        new_k = new_k.replace("layer_norm_2", "layernorm_after")
+            new_k = new_k.replace("attention.self.query", "attention.q_proj")
+            new_k = new_k.replace("attention.self.key", "attention.k_proj")
+            new_k = new_k.replace("attention.self.value", "attention.v_proj")
+            new_k = new_k.replace("attention.self.sr", "attention.sequence_reduction.sequence_reduction")
+            new_k = new_k.replace("attention.self.layer_norm", "attention.sequence_reduction.layer_norm")
+            new_k = new_k.replace("attention.output.dense", "attention.o_proj")
 
-        if "decode_head.linear_c" in new_k:
-            new_k = re.sub(r"decode_head\.linear_c\.(\d+)\.", r"decode_head.linear_projections.\1.", new_k)
+            new_k = new_k.replace("mlp.dense1", "mlp.fc1")
+            new_k = new_k.replace("mlp.dense2", "mlp.fc2")
+            new_k = new_k.replace("layer_norm_1", "layernorm_before")
+            new_k = new_k.replace("layer_norm_2", "layernorm_after")
+
+            if "decode_head.linear_c" in new_k:
+                new_k = re.sub(r"decode_head\.linear_c\.(\d+)\.", r"decode_head.linear_projections.\1.", new_k)
 
         if new_k in target_keys_set:
             new_state[new_k] = v
         else:
-            new_state[k] = v
+            # Fallback to handle "model." prefix variations
+            if new_k.startswith("model.") and new_k[6:] in target_keys_set:
+                new_state[new_k[6:]] = v
+            elif not new_k.startswith("model.") and f"model.{new_k}" in target_keys_set:
+                new_state[f"model.{new_k}"] = v
+            else:
+                new_state[k] = v
 
     return new_state
 
