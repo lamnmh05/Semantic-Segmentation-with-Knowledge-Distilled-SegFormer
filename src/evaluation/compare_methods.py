@@ -275,6 +275,18 @@ def main():
 
     # ----- Draw grid -----
     draw_comparison_grid(rows, args.output_dir, dpi=args.dpi, no_grid=args.no_grid)
+    
+    # ----- Save metadata -----
+    import csv
+    csv_path = os.path.join(args.output_dir, "metadata.csv")
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Row_Image", "Dataset_Index", "Original_Filename"])
+        for i, idx in enumerate(indices):
+            filename = val_dataset.images[idx] if hasattr(val_dataset, "images") else "unknown"
+            writer.writerow([f"row_{i:04d}.png", idx, filename])
+    print(f"Saved metadata → {csv_path}")
+
     print("\n✅ All done!")
 
 
