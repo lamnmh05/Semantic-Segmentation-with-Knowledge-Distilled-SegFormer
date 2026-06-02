@@ -95,6 +95,11 @@ def evaluate_model(model, loader, device, num_classes):
         labels = labels.to(device, non_blocking=True)
 
         logits = model(images)
+        if hasattr(logits, 'logits'):
+            logits = logits.logits
+        elif isinstance(logits, tuple):
+            logits = logits[0]
+            
         logits = F.interpolate(logits, size=labels.shape[-2:], mode="bilinear", align_corners=False)
         preds = torch.argmax(logits, dim=1)
         evaluator.update(preds, labels)
@@ -106,6 +111,15 @@ def evaluate_model(model, loader, device, num_classes):
 # Load config + model
 # ---------------------------------------------------------------------------
 def load_model(config_path, device, checkpoint_override=None):
+    if not config_path.endswith(".yml") and not config_path.endswith(".yaml"):
+        # Assume it's a HuggingFace Hub name or local HF path (Teacher)
+        from transformers import SegformerForSemanticSegmentation
+        print(f"Loading HF model directly: {config_path}")
+        model = SegformerForSemanticSegmentation.from_pretrained(config_path, ignore_mismatched_sizes=True)
+        model.to(device)
+        model.eval()
+        return model, None
+
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     num_classes = cfg["model"]["num_classes"]
@@ -125,6 +139,7 @@ def parse_args():
     parser.add_argument("--mlp_config",     type=str, required=True)
     parser.add_argument("--bpkd_config",    type=str, required=True)
     parser.add_argument("--combine_config", type=str, required=True)
+    parser.add_argument("--teacher_name_or_path", type=str, default="nvidia/segformer-b4-finetuned-ade-512-512")
     parser.add_argument("--data_root",      type=str, default=None,  help="Override dataset root path")
     parser.add_argument("--mlp_checkpoint",     type=str, default=None, help="Override MLP checkpoint path")
     parser.add_argument("--bpkd_checkpoint",    type=str, default=None, help="Override BPKD checkpoint path")
@@ -143,6 +158,7 @@ def main():
         "MLP-FD":  args.mlp_config,
         "BPKD":    args.bpkd_config,
         "Combine": args.combine_config,
+        "Teacher": args.teacher_name_or_path,
     }
     checkpoint_overrides = {
         "MLP-FD":  args.mlp_checkpoint,
