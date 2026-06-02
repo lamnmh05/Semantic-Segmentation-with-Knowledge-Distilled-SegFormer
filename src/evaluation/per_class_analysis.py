@@ -109,27 +109,34 @@ def plot_per_class_bars(methods, method_names, class_names, output_dir, top_n=30
     # Sort by Combine IoU descending, take top N
     sorted_idx = np.argsort(combine_iou)[::-1][:top_n]
 
-    fig, ax = plt.subplots(figsize=(18, 6))
+    fig, ax = plt.subplots(figsize=(20, 7))
     x = np.arange(top_n)
     width = 0.25
     colors_bar = ["#4A90D9", "#E8753A", "#2ECC71"]
 
     for i, name in enumerate(method_names):
         vals = methods[name][sorted_idx]
-        bars = ax.bar(x + i * width, vals, width, label=name, color=colors_bar[i], alpha=0.85)
+        bars = ax.bar(x + i * width, vals, width, label=name, color=colors_bar[i], alpha=0.85, edgecolor='black', linewidth=0.5)
+        # Add values on top of bars
+        ax.bar_label(bars, fmt='%.1f', padding=3, fontsize=8, rotation=90)
 
-    ax.set_xlabel("Class", fontsize=11)
-    ax.set_ylabel("IoU (%)", fontsize=11)
-    ax.set_title(f"Per-Class IoU — Top {top_n} Classes (sorted by {combine_key})", fontsize=13, fontweight="bold")
+    ax.set_xlabel("Class", fontsize=12, fontweight='bold')
+    ax.set_ylabel("IoU (%)", fontsize=12, fontweight='bold')
+    ax.set_title(f"Per-Class IoU — Top {top_n} Classes (sorted by {combine_key})", fontsize=16, fontweight="bold", pad=15)
     ax.set_xticks(x + width)
-    ax.set_xticklabels([class_names[i] for i in sorted_idx], rotation=55, ha="right", fontsize=7)
-    ax.legend(fontsize=10)
-    ax.grid(axis="y", alpha=0.3)
-    ax.set_ylim(0, 100)
+    ax.set_xticklabels([class_names[i].upper() for i in sorted_idx], rotation=45, ha="right", fontsize=9)
+    
+    # Place legend outside or upper right
+    ax.legend(fontsize=11, loc='upper right')
+    ax.grid(axis="y", linestyle='--', alpha=0.6)
+    
+    # Auto adjust y-limit so text doesn't get cut
+    max_val = max([max(methods[n][sorted_idx]) for n in method_names])
+    ax.set_ylim(0, min(100, max_val + 15))
 
     plt.tight_layout()
     path = os.path.join(output_dir, "per_class_iou_top30.png")
-    fig.savefig(path, dpi=200, bbox_inches="tight")
+    fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved bar chart → {path}")
 
@@ -142,28 +149,28 @@ def plot_full_heatmap(methods, method_names, class_names, output_dir):
     combine_key = method_names[-1]
     sorted_idx = np.argsort(methods[combine_key])[::-1]
 
-    fig, ax = plt.subplots(figsize=(10, 30))
+    fig, ax = plt.subplots(figsize=(12, 35))
     y = np.arange(150)
     height = 0.28
     colors_bar = ["#4A90D9", "#E8753A", "#2ECC71"]
 
     for i, name in enumerate(method_names):
         vals = methods[name][sorted_idx]
-        ax.barh(y + i * height, vals, height, label=name, color=colors_bar[i], alpha=0.85)
+        ax.barh(y + i * height, vals, height, label=name, color=colors_bar[i], alpha=0.85, edgecolor='none')
 
-    ax.set_ylabel("Class")
-    ax.set_xlabel("IoU (%)")
-    ax.set_title("Per-Class IoU — All 150 Classes", fontsize=13, fontweight="bold")
+    ax.set_ylabel("Class", fontsize=12, fontweight='bold')
+    ax.set_xlabel("IoU (%)", fontsize=12, fontweight='bold')
+    ax.set_title("Per-Class IoU — All 150 Classes", fontsize=16, fontweight="bold", pad=20)
     ax.set_yticks(y + height)
-    ax.set_yticklabels([class_names[i] for i in sorted_idx], fontsize=5)
-    ax.legend(loc="lower right", fontsize=9)
+    ax.set_yticklabels([class_names[i].upper() for i in sorted_idx], fontsize=7)
+    ax.legend(loc="lower right", fontsize=12)
     ax.invert_yaxis()
     ax.set_xlim(0, 100)
-    ax.grid(axis="x", alpha=0.3)
+    ax.grid(axis="x", linestyle='--', alpha=0.6)
 
     plt.tight_layout()
     path = os.path.join(output_dir, "per_class_iou_all150.png")
-    fig.savefig(path, dpi=150, bbox_inches="tight")
+    fig.savefig(path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved full heatmap → {path}")
 
@@ -179,28 +186,30 @@ def plot_improvement_histogram(methods, method_names, output_dir):
     best_other = np.maximum(*[methods[k] for k in other_keys])
     delta = methods[combine_key] - best_other
 
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(15, 6))
     colors = ['#E74C3C' if d < 0 else '#2ECC71' for d in delta]
 
     sorted_idx = np.argsort(delta)
-    ax.bar(range(len(delta)), delta[sorted_idx], color=[colors[i] for i in sorted_idx], alpha=0.8)
+    bars = ax.bar(range(len(delta)), delta[sorted_idx], color=[colors[i] for i in sorted_idx], alpha=0.85, edgecolor='black', linewidth=0.2)
 
-    ax.axhline(y=0, color='black', linewidth=0.8)
-    ax.set_xlabel("Classes (sorted by improvement)", fontsize=11)
-    ax.set_ylabel("IoU Δ (Combine − best of MLP/BPKD)", fontsize=11)
-    ax.set_title("Per-Class IoU Improvement by Combine", fontsize=13, fontweight="bold")
-    ax.grid(axis="y", alpha=0.3)
+    ax.axhline(y=0, color='black', linewidth=1.2)
+    ax.set_xlabel("Classes (sorted by improvement)", fontsize=12, fontweight='bold')
+    ax.set_ylabel("IoU Δ (Combine − best of MLP/BPKD)", fontsize=12, fontweight='bold')
+    ax.set_title("Per-Class IoU Improvement by Combine", fontsize=16, fontweight="bold", pad=15)
+    ax.grid(axis="y", linestyle='--', alpha=0.6)
 
     improved = (delta > 0).sum()
     degraded = (delta < 0).sum()
     unchanged = (delta == 0).sum()
-    ax.text(0.02, 0.95, f"Improved: {improved}  |  Degraded: {degraded}  |  Unchanged: {unchanged}",
-            transform=ax.transAxes, fontsize=10, verticalalignment="top",
-            bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.5))
+    
+    # Highlight text box with statistics
+    stats_text = f"Improved: {improved} classes\nDegraded: {degraded} classes\nUnchanged: {unchanged} classes"
+    ax.text(0.02, 0.95, stats_text, transform=ax.transAxes, fontsize=11, verticalalignment="top",
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="#F8F9F9", edgecolor="#BDC3C7", alpha=0.9))
 
     plt.tight_layout()
     path = os.path.join(output_dir, "iou_improvement_histogram.png")
-    fig.savefig(path, dpi=200, bbox_inches="tight")
+    fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     print(f"Saved improvement histogram → {path}")
 
