@@ -44,9 +44,9 @@ distill:
   #            + lambda_feat * hierarchical_feature_loss
   #            + lambda_bpkd * boundary_aware_kd_loss
   #            + lambda_uncertainty * confidence_consistency_loss
-  lambda_ce: 1.0
-  lambda_feat: 0.5
-  lambda_bpkd: 1.0
+  lambda_ce: 0.5
+  lambda_feat: 0.2
+  lambda_bpkd: 0.3
   lambda_uncertainty: 0.0
 
   # Hierarchical feature distillation over 4 SegFormer stages
@@ -58,7 +58,7 @@ distill:
   mlp_hidden_channels: [64, 128, 320, 512]
 
   # The code normalizes these internally, so [1,1,1,1] means equal weight.
-  stage_weights: [1.0, 1.0, 1.0, 1.0]
+  stage_weights: [0.25, 0.5, 0.75, 1.0]
 
   # Boundary-aware feature loss:
   # weight = valid_mask * (1 + feature_boundary_weight * edge_mask) * teacher_confidence
