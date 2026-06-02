@@ -268,18 +268,37 @@ def save_top_classes_table(methods, method_names, class_names, output_dir, top_n
     print(f"Saved top classes analysis → {csv_path}")
 
     # Print to console
-    print(f"\n{'='*70}")
+    print(f"\n{'='*80}")
     print(f"  TOP-10 CLASSES IMPROVED BY COMBINE")
-    print(f"{'='*70}")
-    print(f"  {'Class':<20} | {'MLP-FD':>8} | {'BPKD':>8} | {'Combine':>8} | {'Δ':>6}")
-    print(f"  {'-'*20}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}-+-{'-'*6}")
+    print(f"{'='*80}")
+    
+    header_str = f"  {'Class':<20}"
+    for n in method_names:
+        header_str += f" | {n:>8}"
+    header_str += f" | {'Δ':>6}"
+    print(header_str)
+    
+    sep_str = f"  {'-'*20}"
+    for _ in method_names:
+        sep_str += f"-+-{'-'*8}"
+    sep_str += f"-+-{'-'*6}"
+    print(sep_str)
+
     for idx in improved_idx:
-        print(f"  {class_names[idx]:<20} | {methods[method_names[0]][idx]:>7.2f}% | {methods[method_names[1]][idx]:>7.2f}% | {methods[method_names[2]][idx]:>7.2f}% | {delta[idx]:>+5.2f}")
+        row_str = f"  {class_names[idx]:<20}"
+        for n in method_names:
+            row_str += f" | {methods[n][idx]:>7.2f}%"
+        row_str += f" | {delta[idx]:>+5.2f}"
+        print(row_str)
 
     print(f"\n  TOP-10 CLASSES DEGRADED BY COMBINE")
-    print(f"  {'-'*20}-+-{'-'*8}-+-{'-'*8}-+-{'-'*8}-+-{'-'*6}")
+    print(sep_str)
     for idx in degraded_idx:
-        print(f"  {class_names[idx]:<20} | {methods[method_names[0]][idx]:>7.2f}% | {methods[method_names[1]][idx]:>7.2f}% | {methods[method_names[2]][idx]:>7.2f}% | {delta[idx]:>+5.2f}")
+        row_str = f"  {class_names[idx]:<20}"
+        for n in method_names:
+            row_str += f" | {methods[n][idx]:>7.2f}%"
+        row_str += f" | {delta[idx]:>+5.2f}"
+        print(row_str)
 
 
 # ---------------------------------------------------------------------------
