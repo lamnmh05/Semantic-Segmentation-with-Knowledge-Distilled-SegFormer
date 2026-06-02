@@ -209,7 +209,10 @@ class UHBKD(Distiller):
 
     # Parameter helpers for compatibility with existing training code
     def get_connector_parameters(self):
-        return list(self.stage_mlps.parameters())
+        params = list(self.stage_mlps.parameters())
+        if self.class_boundary_weight is not None:
+            params.append(self.class_boundary_weight)
+        return params
 
     def get_mlp_parameters(self):
         return self.get_connector_parameters()
@@ -218,10 +221,7 @@ class UHBKD(Distiller):
         return self.get_connector_parameters()
 
     def get_learnable_parameters(self):
-        params = super().get_learnable_parameters() + self.get_connector_parameters()
-        if self.class_boundary_weight is not None:
-            params += [self.class_boundary_weight]
-        return params
+        return super().get_learnable_parameters() + self.get_connector_parameters()
 
     def get_extra_parameters(self):
         total = sum(p.numel() for p in self.stage_mlps.parameters())
