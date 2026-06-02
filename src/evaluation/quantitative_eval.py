@@ -105,13 +105,13 @@ def evaluate_model(model, loader, device, num_classes):
 # ---------------------------------------------------------------------------
 # Load config + model
 # ---------------------------------------------------------------------------
-def load_model(config_path, device):
+def load_model(config_path, device, checkpoint_override=None):
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     num_classes = cfg["model"]["num_classes"]
     model = get_model(cfg["model"]["student"], num_classes)
     model.to(device)
-    checkpoint_path = cfg["model"].get("checkpoint")
+    checkpoint_path = checkpoint_override or cfg["model"].get("checkpoint")
     load_eval_checkpoint(model, checkpoint_path, device)
     model.eval()
     return model, cfg
@@ -125,7 +125,10 @@ def parse_args():
     parser.add_argument("--mlp_config",     type=str, required=True)
     parser.add_argument("--bpkd_config",    type=str, required=True)
     parser.add_argument("--combine_config", type=str, required=True)
-    parser.add_argument("--data_root",      type=str, default=None)
+    parser.add_argument("--data_root",      type=str, default=None,  help="Override dataset root path")
+    parser.add_argument("--mlp_checkpoint",     type=str, default=None, help="Override MLP checkpoint path")
+    parser.add_argument("--bpkd_checkpoint",    type=str, default=None, help="Override BPKD checkpoint path")
+    parser.add_argument("--combine_checkpoint", type=str, default=None, help="Override Combine checkpoint path")
     parser.add_argument("--output_dir",     type=str, default="eval_results/quantitative")
     parser.add_argument("--num_workers",    type=int, default=4)
     return parser.parse_args()
@@ -140,6 +143,11 @@ def main():
         "MLP-FD":  args.mlp_config,
         "BPKD":    args.bpkd_config,
         "Combine": args.combine_config,
+    }
+    checkpoint_overrides = {
+        "MLP-FD":  args.mlp_checkpoint,
+        "BPKD":    args.bpkd_checkpoint,
+        "Combine": args.combine_checkpoint,
     }
 
     # Load first config for dataset
@@ -168,7 +176,7 @@ def main():
         print(f"  Config: {config_path}")
         print(f"{'='*60}")
 
-        model, _ = load_model(config_path, device)
+        model, _ = load_model(config_path, device, checkpoint_overrides.get(name))
         res = evaluate_model(model, loader, device, num_classes)
         results[name] = res
         all_per_class[name] = res["per_class_iou"]
