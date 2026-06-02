@@ -60,7 +60,7 @@ def decode_segmap(mask, colors, num_classes=150):
 # ---------------------------------------------------------------------------
 # Load config + model helper
 # ---------------------------------------------------------------------------
-def load_config_and_model(config_path, device):
+def load_config_and_model(config_path, device, checkpoint_override=None):
     """Load yaml config, build student model, load checkpoint weights."""
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -69,7 +69,7 @@ def load_config_and_model(config_path, device):
     model = get_model(cfg["model"]["student"], num_classes)
     model.to(device)
 
-    checkpoint_path = cfg["model"].get("checkpoint")
+    checkpoint_path = checkpoint_override or cfg["model"].get("checkpoint")
     load_eval_checkpoint(model, checkpoint_path, device)
     model.eval()
     return model, cfg
@@ -187,6 +187,9 @@ def parse_args():
     parser.add_argument("--bpkd_config",    type=str, required=True, help="Config for BPKD method")
     parser.add_argument("--combine_config", type=str, required=True, help="Config for Combine method")
     parser.add_argument("--data_root",      type=str, default=None,  help="Override dataset path")
+    parser.add_argument("--mlp_checkpoint",     type=str, default=None, help="Override MLP checkpoint path")
+    parser.add_argument("--bpkd_checkpoint",    type=str, default=None, help="Override BPKD checkpoint path")
+    parser.add_argument("--combine_checkpoint", type=str, default=None, help="Override Combine checkpoint path")
     parser.add_argument("--output_dir",     type=str, default="eval_results/comparison")
     parser.add_argument("--num_images",     type=int, default=10)
     parser.add_argument("--random_subset",  action="store_true",     help="Random sample instead of first N")
@@ -202,13 +205,13 @@ def main():
 
     # ----- Load 3 models -----
     print("\n=== Loading MLP model ===")
-    model_mlp, cfg_mlp = load_config_and_model(args.mlp_config, device)
+    model_mlp, cfg_mlp = load_config_and_model(args.mlp_config, device, args.mlp_checkpoint)
 
     print("\n=== Loading BPKD model ===")
-    model_bpkd, cfg_bpkd = load_config_and_model(args.bpkd_config, device)
+    model_bpkd, cfg_bpkd = load_config_and_model(args.bpkd_config, device, args.bpkd_checkpoint)
 
     print("\n=== Loading Combine model ===")
-    model_combine, cfg_combine = load_config_and_model(args.combine_config, device)
+    model_combine, cfg_combine = load_config_and_model(args.combine_config, device, args.combine_checkpoint)
 
     # ----- Build validation dataset (use config from MLP – same dataset) -----
     cfg = cfg_mlp
