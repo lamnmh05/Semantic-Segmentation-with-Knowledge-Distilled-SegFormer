@@ -103,7 +103,7 @@ def get_ade20k_class_names():
 # ---------------------------------------------------------------------------
 def plot_per_class_bars(methods, method_names, class_names, output_dir, top_n=30):
     """Bar chart showing per-class IoU for top-N classes (sorted by Combine IoU desc)."""
-    combine_key = method_names[-1]  # Assume Combine is last
+    combine_key = "Combine" if "Combine" in method_names else method_names[-1]
     combine_iou = methods[combine_key]
 
     # Sort by Combine IoU descending, take top N
@@ -111,8 +111,10 @@ def plot_per_class_bars(methods, method_names, class_names, output_dir, top_n=30
 
     fig, ax = plt.subplots(figsize=(20, 7))
     x = np.arange(top_n)
-    width = 0.25
-    colors_bar = ["#4A90D9", "#E8753A", "#2ECC71"]
+    
+    num_methods = len(method_names)
+    width = 0.8 / num_methods
+    colors_bar = ["#4A90D9", "#E8753A", "#2ECC71", "#9B59B6", "#F1C40F"]
 
     for i, name in enumerate(method_names):
         vals = methods[name][sorted_idx]
@@ -123,7 +125,10 @@ def plot_per_class_bars(methods, method_names, class_names, output_dir, top_n=30
     ax.set_xlabel("Class", fontsize=12, fontweight='bold')
     ax.set_ylabel("IoU (%)", fontsize=12, fontweight='bold')
     ax.set_title(f"Per-Class IoU — Top {top_n} Classes (sorted by {combine_key})", fontsize=16, fontweight="bold", pad=15)
-    ax.set_xticks(x + width)
+    
+    # Adjust xticks to center
+    center_offset = (num_methods - 1) * width / 2
+    ax.set_xticks(x + center_offset)
     ax.set_xticklabels([class_names[i].upper() for i in sorted_idx], rotation=45, ha="right", fontsize=9)
     
     # Place legend outside or upper right
@@ -146,13 +151,15 @@ def plot_per_class_bars(methods, method_names, class_names, output_dir, top_n=30
 # ---------------------------------------------------------------------------
 def plot_full_heatmap(methods, method_names, class_names, output_dir):
     """Horizontal grouped bar for ALL 150 classes."""
-    combine_key = method_names[-1]
+    combine_key = "Combine" if "Combine" in method_names else method_names[-1]
     sorted_idx = np.argsort(methods[combine_key])[::-1]
 
     fig, ax = plt.subplots(figsize=(12, 35))
     y = np.arange(150)
-    height = 0.28
-    colors_bar = ["#4A90D9", "#E8753A", "#2ECC71"]
+    
+    num_methods = len(method_names)
+    height = 0.8 / num_methods
+    colors_bar = ["#4A90D9", "#E8753A", "#2ECC71", "#9B59B6", "#F1C40F"]
 
     for i, name in enumerate(method_names):
         vals = methods[name][sorted_idx]
@@ -161,7 +168,9 @@ def plot_full_heatmap(methods, method_names, class_names, output_dir):
     ax.set_ylabel("Class", fontsize=12, fontweight='bold')
     ax.set_xlabel("IoU (%)", fontsize=12, fontweight='bold')
     ax.set_title("Per-Class IoU — All 150 Classes", fontsize=16, fontweight="bold", pad=20)
-    ax.set_yticks(y + height)
+    
+    center_offset = (num_methods - 1) * height / 2
+    ax.set_yticks(y + center_offset)
     ax.set_yticklabels([class_names[i].upper() for i in sorted_idx], fontsize=7)
     ax.legend(loc="lower right", fontsize=12)
     ax.invert_yaxis()
@@ -180,8 +189,11 @@ def plot_full_heatmap(methods, method_names, class_names, output_dir):
 # ---------------------------------------------------------------------------
 def plot_improvement_histogram(methods, method_names, output_dir):
     """Histogram of IoU difference: Combine - max(MLP, BPKD)."""
-    combine_key = method_names[-1]
-    other_keys = method_names[:-1]
+    combine_key = "Combine" if "Combine" in method_names else method_names[-1]
+    # Only compare with student baselines, ignore Teacher for the improvement calculation
+    other_keys = [k for k in method_names if k not in [combine_key, "Teacher"]]
+    if not other_keys:
+        other_keys = [k for k in method_names if k != combine_key]
 
     best_other = np.maximum(*[methods[k] for k in other_keys])
     delta = methods[combine_key] - best_other
@@ -219,8 +231,10 @@ def plot_improvement_histogram(methods, method_names, output_dir):
 # ---------------------------------------------------------------------------
 def save_top_classes_table(methods, method_names, class_names, output_dir, top_n=10):
     """Save CSV: top-N improved and top-N degraded classes."""
-    combine_key = method_names[-1]
-    other_keys = method_names[:-1]
+    combine_key = "Combine" if "Combine" in method_names else method_names[-1]
+    other_keys = [k for k in method_names if k not in [combine_key, "Teacher"]]
+    if not other_keys:
+        other_keys = [k for k in method_names if k != combine_key]
 
     best_other = np.maximum(*[methods[k] for k in other_keys])
     delta = methods[combine_key] - best_other

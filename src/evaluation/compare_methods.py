@@ -62,6 +62,14 @@ def decode_segmap(mask, colors, num_classes=150):
 # ---------------------------------------------------------------------------
 def load_config_and_model(config_path, device, checkpoint_override=None):
     """Load yaml config, build student model, load checkpoint weights."""
+    if not config_path.endswith(".yml") and not config_path.endswith(".yaml"):
+        from transformers import SegformerForSemanticSegmentation
+        print(f"Loading HF model directly: {config_path}")
+        model = SegformerForSemanticSegmentation.from_pretrained(config_path, ignore_mismatched_sizes=True)
+        model.to(device)
+        model.eval()
+        return model, None
+
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
 
@@ -83,6 +91,12 @@ def predict(model, images, target_size, device):
     """Run model inference and return prediction mask (numpy)."""
     images = images.to(device, non_blocking=True)
     logits = model(images)
+    
+    if hasattr(logits, 'logits'):
+        logits = logits.logits
+    elif isinstance(logits, tuple):
+        logits = logits[0]
+        
     logits = F.interpolate(logits, size=target_size, mode="bilinear", align_corners=False)
     preds = torch.argmax(logits, dim=1)
     return preds[0].cpu().numpy().astype(np.uint8)
@@ -106,12 +120,12 @@ def tensor_to_image(image_tensor):
 def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
     """
     rows: list of dicts with keys
-          {'image', 'gt', 'mlp', 'bpkd', 'combine'}
+          {'image', 'gt', 'mlp', 'bpkd', 'combine', 'teacher'}
           each value is an RGB numpy array [H,W,3].
     """
     num_rows = len(rows)
-    col_labels = ["(a) Image", "(b) Ground Truth", "(c) MLP", "(d) BPKD", "(e) Combine"]
-    col_keys   = ["image",     "gt",               "mlp",     "bpkd",     "combine"]
+    col_labels = ["(a) Image", "(b) Ground Truth", "(c) MLP", "(d) BPKD", "(e) Combine", "(f) Teacher"]
+    col_keys   = ["image",     "gt",               "mlp",     "bpkd",     "combine",     "teacher"]
 
     # Border colors for each column (R,G,B 0-1)
     border_colors = [
@@ -120,6 +134,7 @@ def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
         (0.0, 0.6, 1.0),   # blue – MLP
         (1.0, 0.5, 0.0),   # orange – BPKD
         (0.8, 0.0, 0.8),   # magenta – Combine
+        (0.5, 0.5, 0.5),   # gray – Teacher
     ]
 
     os.makedirs(output_dir, exist_ok=True)
@@ -127,8 +142,8 @@ def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
     
     if not no_grid:
         fig, axes = plt.subplots(
-            num_rows, 5,
-            figsize=(cell_w * 5, cell_h * num_rows + 0.6),
+            num_rows, 6,
+            figsize=(cell_w * 6, cell_h * num_rows + 0.6),
             gridspec_kw={"hspace": 0.08, "wspace": 0.04},
         )
 
@@ -136,7 +151,7 @@ def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
             axes = axes[np.newaxis, :]
 
         for r in range(num_rows):
-            for c in range(5):
+            for c in range(6):
                 ax = axes[r, c]
                 img = rows[r][col_keys[c]]
                 ax.imshow(img)
@@ -161,8 +176,8 @@ def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
 
     # Also save individual rows
     for r in range(num_rows):
-        fig_row, axes_row = plt.subplots(1, 5, figsize=(cell_w * 5, cell_h))
-        for c in range(5):
+        fig_row, axes_row = plt.subplots(1, 6, figsize=(cell_w * 6, cell_h))
+        for c in range(6):
             ax = axes_row[c]
             ax.imshow(rows[r][col_keys[c]])
             ax.set_xticks([])
@@ -188,6 +203,7 @@ def parse_args():
     parser.add_argument("--mlp_config",     type=str, required=True, help="Config for MLP method")
     parser.add_argument("--bpkd_config",    type=str, required=True, help="Config for BPKD method")
     parser.add_argument("--combine_config", type=str, required=True, help="Config for Combine method")
+    parser.add_argument("--teacher_name_or_path", type=str, default="nvidia/segformer-b4-finetuned-ade-512-512")
     parser.add_argument("--data_root",      type=str, default=None,  help="Override dataset path")
     parser.add_argument("--mlp_checkpoint",     type=str, default=None, help="Override MLP checkpoint path")
     parser.add_argument("--bpkd_checkpoint",    type=str, default=None, help="Override BPKD checkpoint path")
@@ -215,6 +231,9 @@ def main():
 
     print("\n=== Loading Combine model ===")
     model_combine, cfg_combine = load_config_and_model(args.combine_config, device, args.combine_checkpoint)
+
+    print("\n=== Loading Teacher model ===")
+    model_teacher, _ = load_config_and_model(args.teacher_name_or_path, device, None)
 
     # ----- Build validation dataset (use config from MLP – same dataset) -----
     cfg = cfg_mlp
@@ -262,7 +281,8 @@ def main():
 
         pred_mlp     = predict(model_mlp,     images, target_size, device)
         pred_bpkd    = predict(model_bpkd,    images, target_size, device)
-        pred_combine = predict(model_combine,  images, target_size, device)
+        pred_combine = predict(model_combine, images, target_size, device)
+        pred_teacher = predict(model_teacher, images, target_size, device)
 
         rows.append({
             "image":   img_rgb,
@@ -270,6 +290,7 @@ def main():
             "mlp":     decode_segmap(pred_mlp,     colors, num_classes),
             "bpkd":    decode_segmap(pred_bpkd,    colors, num_classes),
             "combine": decode_segmap(pred_combine, colors, num_classes),
+            "teacher": decode_segmap(pred_teacher, colors, num_classes),
         })
         print(f"  [{i+1}/{len(indices)}] done (idx={indices[i]})")
 
