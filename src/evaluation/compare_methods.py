@@ -122,6 +122,7 @@ def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
         (0.8, 0.0, 0.8),   # magenta – Combine
     ]
 
+    os.makedirs(output_dir, exist_ok=True)
     cell_h, cell_w = 2.2, 2.6
     
     if not no_grid:
@@ -153,7 +154,6 @@ def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
                 if r == 0:
                     ax.set_title(col_labels[c], fontsize=10, fontweight="bold", pad=4)
 
-        os.makedirs(output_dir, exist_ok=True)
         grid_path = os.path.join(output_dir, "comparison_grid.png")
         fig.savefig(grid_path, dpi=dpi, bbox_inches="tight", pad_inches=0.1)
         plt.close(fig)
