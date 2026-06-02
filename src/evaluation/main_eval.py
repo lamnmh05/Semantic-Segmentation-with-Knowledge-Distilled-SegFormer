@@ -27,6 +27,7 @@ def remap_state_dict(state_dict, target_keys):
 
         new_k = k
 
+        # Map from encoder to stages (if model expects stages)
         if "encoder.patch_embeddings" in new_k:
             new_k = re.sub(r"encoder\.patch_embeddings\.(\d+)\.", r"stages.\1.patch_embeddings.", new_k)
         if "encoder.block" in new_k:
@@ -35,6 +36,12 @@ def remap_state_dict(state_dict, target_keys):
             new_k = re.sub(r"encoder\.layer_norm\.(\d+)\.", r"stages.\1.layer_norm.", new_k)
         if "encoder.norm" in new_k:
             new_k = re.sub(r"encoder\.norm\.(\d+)\.", r"stages.\1.layer_norm.", new_k)
+
+        # Map from stages to encoder (if model expects encoder)
+        if "stages." in new_k:
+            new_k = re.sub(r"stages\.(\d+)\.patch_embeddings\.", r"encoder.patch_embeddings.\1.", new_k)
+            new_k = re.sub(r"stages\.(\d+)\.blocks\.(\d+)\.", r"encoder.block.\1.\2.", new_k)
+            new_k = re.sub(r"stages\.(\d+)\.layer_norm\.", r"encoder.layer_norm.\1.", new_k)
 
         new_k = new_k.replace("attention.self.query", "attention.q_proj")
         new_k = new_k.replace("attention.self.key", "attention.k_proj")
