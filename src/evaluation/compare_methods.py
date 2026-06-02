@@ -103,7 +103,7 @@ def tensor_to_image(image_tensor):
 # ---------------------------------------------------------------------------
 # Draw the comparison grid
 # ---------------------------------------------------------------------------
-def draw_comparison_grid(rows, output_dir, dpi=200):
+def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
     """
     rows: list of dicts with keys
           {'image', 'gt', 'mlp', 'bpkd', 'combine'}
@@ -123,39 +123,41 @@ def draw_comparison_grid(rows, output_dir, dpi=200):
     ]
 
     cell_h, cell_w = 2.2, 2.6
-    fig, axes = plt.subplots(
-        num_rows, 5,
-        figsize=(cell_w * 5, cell_h * num_rows + 0.6),
-        gridspec_kw={"hspace": 0.08, "wspace": 0.04},
-    )
+    
+    if not no_grid:
+        fig, axes = plt.subplots(
+            num_rows, 5,
+            figsize=(cell_w * 5, cell_h * num_rows + 0.6),
+            gridspec_kw={"hspace": 0.08, "wspace": 0.04},
+        )
 
-    if num_rows == 1:
-        axes = axes[np.newaxis, :]
+        if num_rows == 1:
+            axes = axes[np.newaxis, :]
 
-    for r in range(num_rows):
-        for c in range(5):
-            ax = axes[r, c]
-            img = rows[r][col_keys[c]]
-            ax.imshow(img)
-            ax.set_xticks([])
-            ax.set_yticks([])
+        for r in range(num_rows):
+            for c in range(5):
+                ax = axes[r, c]
+                img = rows[r][col_keys[c]]
+                ax.imshow(img)
+                ax.set_xticks([])
+                ax.set_yticks([])
 
-            # Dashed coloured border (like the reference image)
-            color = border_colors[c]
-            for spine in ax.spines.values():
-                spine.set_edgecolor(color)
-                spine.set_linewidth(2.0)
-                spine.set_linestyle((0, (4, 3)))  # dashed
+                # Dashed coloured border (like the reference image)
+                color = border_colors[c]
+                for spine in ax.spines.values():
+                    spine.set_edgecolor(color)
+                    spine.set_linewidth(2.0)
+                    spine.set_linestyle((0, (4, 3)))  # dashed
 
-            # Column label on first row only
-            if r == 0:
-                ax.set_title(col_labels[c], fontsize=10, fontweight="bold", pad=4)
+                # Column label on first row only
+                if r == 0:
+                    ax.set_title(col_labels[c], fontsize=10, fontweight="bold", pad=4)
 
-    os.makedirs(output_dir, exist_ok=True)
-    grid_path = os.path.join(output_dir, "comparison_grid.png")
-    fig.savefig(grid_path, dpi=dpi, bbox_inches="tight", pad_inches=0.1)
-    plt.close(fig)
-    print(f"Saved comparison grid → {grid_path}")
+        os.makedirs(output_dir, exist_ok=True)
+        grid_path = os.path.join(output_dir, "comparison_grid.png")
+        fig.savefig(grid_path, dpi=dpi, bbox_inches="tight", pad_inches=0.1)
+        plt.close(fig)
+        print(f"Saved comparison grid → {grid_path}")
 
     # Also save individual rows
     for r in range(num_rows):
@@ -193,6 +195,7 @@ def parse_args():
     parser.add_argument("--output_dir",     type=str, default="eval_results/comparison")
     parser.add_argument("--num_images",     type=int, default=10)
     parser.add_argument("--random_subset",  action="store_true",     help="Random sample instead of first N")
+    parser.add_argument("--no_grid",        action="store_true",     help="Do not save the combined comparison grid image")
     parser.add_argument("--image_indices",  type=str, default=None,  help="Comma-separated indices, e.g. 0,5,12")
     parser.add_argument("--dpi",            type=int, default=200)
     return parser.parse_args()
@@ -271,7 +274,7 @@ def main():
         print(f"  [{i+1}/{len(indices)}] done (idx={indices[i]})")
 
     # ----- Draw grid -----
-    draw_comparison_grid(rows, args.output_dir, dpi=args.dpi)
+    draw_comparison_grid(rows, args.output_dir, dpi=args.dpi, no_grid=args.no_grid)
     print("\n✅ All done!")
 
 
