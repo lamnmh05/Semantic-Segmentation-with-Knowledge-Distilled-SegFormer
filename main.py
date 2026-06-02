@@ -8,6 +8,7 @@ from src.distillers.attn_fd import AttnFD
 from src.distillers.combine import Combine
 from src.distillers.fit_net import FitNet
 from src.distillers.supervised import SupervisedSegformer
+from src.distillers.uhbkd import UHBKD
 from src.engine.trainer import Trainer
 from src.eval import run_student_evaluation
 
@@ -106,6 +107,8 @@ def main():
             distiller = BPKD(student, teacher, cfg)
         elif distill_method == "combine":
             distiller = Combine(student, teacher, cfg)
+        elif distill_method == "uhbkd":
+            distiller = UHBKD(student, teacher, cfg)
         else:
             raise ValueError(f"Unknown distillation method: {distill_cfg.get('method')}")
 

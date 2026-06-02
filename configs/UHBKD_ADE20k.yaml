@@ -38,7 +38,7 @@ train:
   poly_power: 1.0
 
 distill:
-  method: "UHBBKD"
+  method: "UHBKD"
 
   # loss_total = lambda_ce * CE
   #            + lambda_feat * hierarchical_feature_loss
