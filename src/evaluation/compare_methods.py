@@ -213,6 +213,7 @@ def parse_args():
     parser.add_argument("--random_subset",  action="store_true",     help="Random sample instead of first N")
     parser.add_argument("--no_grid",        action="store_true",     help="Do not save the combined comparison grid image")
     parser.add_argument("--image_indices",  type=str, default=None,  help="Comma-separated indices, e.g. 0,5,12")
+    parser.add_argument("--image_filenames",type=str, default=None,  help="Comma-separated filenames, e.g. ADE_val_00001234.jpg")
     parser.add_argument("--dpi",            type=int, default=200)
     return parser.parse_args()
 
@@ -246,7 +247,18 @@ def main():
     # ----- Select indices -----
     all_indices = list(range(len(val_dataset)))
 
-    if args.image_indices:
+    if args.image_filenames:
+        filenames = [x.strip() for x in args.image_filenames.split(",")]
+        indices = []
+        for fn in filenames:
+            if hasattr(val_dataset, "images"):
+                try:
+                    idx = val_dataset.images.index(fn)
+                    indices.append(idx)
+                except ValueError:
+                    print(f"Warning: Filename {fn} not found in validation set. Skipping.")
+        print(f"Using matched indices from filenames: {indices}")
+    elif args.image_indices:
         indices = [int(x.strip()) for x in args.image_indices.split(",")]
         print(f"Using manually specified indices: {indices}")
     elif args.random_subset:
