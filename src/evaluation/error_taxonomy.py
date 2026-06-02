@@ -6,8 +6,6 @@ Phân loại mỗi pixel lỗi (pred ≠ GT) thành 3 nhóm:
   2. Misclassification Error: pixel xa boundary, nhầm class
   3. (bonus) tính tổng error pixel count
 
-Tham khảo: "What's Outside the Intersection?" (WACV 2024)
-
 Output:
   - Stacked bar chart: tỉ lệ % từng loại lỗi cho MLP / BPKD / Combine
   - CSV chi tiết
@@ -397,7 +395,7 @@ def main():
     plot_error_taxonomy(results, args.output_dir)
     plot_error_reduction(results, args.output_dir)
 
-    print("\n✅ Error taxonomy analysis done!")
+    print("\nError taxonomy analysis done!")
 
 
 if __name__ == "__main__":
