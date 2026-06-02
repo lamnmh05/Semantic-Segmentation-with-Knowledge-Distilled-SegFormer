@@ -100,6 +100,9 @@ def main():
     elif distill_method == "BPKD":
         from src.distillers.bpkd import BPKD
         distiller = BPKD(student, teacher, cfg)
+    elif distill_method == "Combine":
+        from src.distillers.combine import Combine
+        distiller = Combine(student, teacher, cfg)
     else:
         raise ValueError(f"Unknown distillation method: {distill_method}")
 
