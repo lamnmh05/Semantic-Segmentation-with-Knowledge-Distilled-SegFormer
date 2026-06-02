@@ -117,7 +117,7 @@ def tensor_to_image(image_tensor):
 # ---------------------------------------------------------------------------
 # Draw the comparison grid
 # ---------------------------------------------------------------------------
-def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
+def draw_comparison_grid(rows, output_dir, filenames=None, dpi=200, no_grid=False):
     """
     rows: list of dicts with keys
           {'image', 'gt', 'mlp', 'bpkd', 'combine', 'teacher'}
@@ -188,7 +188,14 @@ def draw_comparison_grid(rows, output_dir, dpi=200, no_grid=False):
                 spine.set_linewidth(2.0)
                 spine.set_linestyle((0, (4, 3)))
             ax.set_title(col_labels[c], fontsize=9, fontweight="bold", pad=3)
-        row_path = os.path.join(output_dir, f"row_{r:04d}.png")
+            
+        if filenames and r < len(filenames):
+            base_name = os.path.splitext(filenames[r])[0]
+            row_name = f"{base_name}_comparison.png"
+        else:
+            row_name = f"row_{r:04d}.png"
+            
+        row_path = os.path.join(output_dir, row_name)
         fig_row.savefig(row_path, dpi=dpi, bbox_inches="tight", pad_inches=0.05)
         plt.close(fig_row)
 
@@ -306,8 +313,13 @@ def main():
         })
         print(f"  [{i+1}/{len(indices)}] done (idx={indices[i]})")
 
+    # ----- Extract filenames for saving -----
+    filenames = []
+    if hasattr(val_dataset, "images"):
+        filenames = [val_dataset.images[idx] for idx in indices]
+
     # ----- Draw grid -----
-    draw_comparison_grid(rows, args.output_dir, dpi=args.dpi, no_grid=args.no_grid)
+    draw_comparison_grid(rows, args.output_dir, filenames=filenames, dpi=args.dpi, no_grid=args.no_grid)
     
     # ----- Save metadata -----
     import csv
