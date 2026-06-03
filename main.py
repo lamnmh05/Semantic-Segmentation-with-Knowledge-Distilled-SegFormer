@@ -4,13 +4,47 @@ import torch
 from torch.utils.data import DataLoader
 
 from src.train import load_config, get_dataset, get_model, build_optimizer, load_checkpoint
-from src.distillers.attn_fd import AttnFD
-from src.distillers.combine import Combine
-from src.distillers.fit_net import FitNet
 from src.distillers.supervised import SupervisedSegformer
-from src.distillers.uhbkd import UHBKD
 from src.engine.trainer import Trainer
 from src.eval import run_student_evaluation
+
+
+SUPERVISED_METHODS = {"", "none", "supervised", "finetune"}
+DISTILLATION_METHODS = {"mlp", "mlpfd", "bpkd", "combine"}
+
+
+def build_distiller(student, cfg, device):
+    distill_cfg = cfg.get("distill") or {}
+    distill_method = str(distill_cfg.get("method", "")).strip().lower()
+
+    if distill_method in SUPERVISED_METHODS:
+        return SupervisedSegformer(student, cfg)
+
+    if distill_method not in DISTILLATION_METHODS:
+        available = sorted((SUPERVISED_METHODS - {""}) | DISTILLATION_METHODS)
+        raise ValueError(
+            f"Unknown distillation method: {distill_cfg.get('method')}. "
+            f"Available methods: {', '.join(available)}"
+        )
+
+    teacher = get_model(cfg["model"], role="teacher").to(device)
+    load_checkpoint(teacher, cfg["model"].get("teacher_checkpoint"), device)
+
+    if distill_method in {"mlp", "mlpfd"}:
+        from src.distillers.mlp import MLPFD
+
+        return MLPFD(student, teacher, cfg)
+
+    if distill_method == "bpkd":
+        from src.distillers.bpkd import BPKD
+
+        return BPKD(student, teacher, cfg)
+
+    if distill_method == "combine":
+        from src.distillers.combine import Combine
+
+        return Combine(student, teacher, cfg)
+
 
 def main():
     if len(sys.argv) == 1:
@@ -86,32 +120,7 @@ def main():
         )
         return
 
-    distill_cfg = cfg.get("distill") or {}
-    distill_method = str(distill_cfg.get("method", "")).strip().lower()
-
-    if distill_method in ("", "none", "supervised", "finetune", "finetune_only"):
-        distiller = SupervisedSegformer(student, cfg)
-    else:
-        teacher = get_model(cfg["model"], role="teacher").to(device)
-        load_checkpoint(teacher, cfg["model"].get("teacher_checkpoint"), device)
-
-        if distill_method == "fitnet":
-            distiller = FitNet(student, teacher, cfg)
-        elif distill_method == "attnfd":
-            distiller = AttnFD(student, teacher, cfg)
-        elif distill_method in ("mlp", "mlpfd"):
-            from src.distillers.mlp import MLPFD
-            distiller = MLPFD(student, teacher, cfg)
-        elif distill_method == "bpkd":
-            from src.distillers.bpkd import BPKD
-            distiller = BPKD(student, teacher, cfg)
-        elif distill_method == "combine":
-            distiller = Combine(student, teacher, cfg)
-        elif distill_method == "uhbkd":
-            distiller = UHBKD(student, teacher, cfg)
-        else:
-            raise ValueError(f"Unknown distillation method: {distill_cfg.get('method')}")
-
+    distiller = build_distiller(student, cfg, device)
     distiller = distiller.to(device)
     optimizer = build_optimizer(distiller, cfg)
 
