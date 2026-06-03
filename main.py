@@ -1,6 +1,124 @@
-def main():
-    print("Hello from semantic-segmentation-with-knowledge-distilled-segformer!")
+import sys
+import argparse
+import torch
+from torch.utils.data import DataLoader
 
+from src.train import load_config, get_dataset, get_model, build_optimizer, load_checkpoint
+from src.distillers.attn_fd import AttnFD
+from src.distillers.combine import Combine
+from src.distillers.fit_net import FitNet
+from src.distillers.supervised import SupervisedSegformer
+from src.distillers.uhbkd import UHBKD
+from src.engine.trainer import Trainer
+from src.eval import run_student_evaluation
+
+def main():
+    if len(sys.argv) == 1:
+        print("No arguments provided. Please run with --config path/to/config.yml")
+        print("Example: python main.py --config configs/Segformer_ADE20k.yml --data_path /kaggle/input/dataset --epochs 50")
+
+    parser = argparse.ArgumentParser(description="SegFormer training and knowledge distillation")
+    parser.add_argument("--config", type=str, required=True, help="Path to config YAML file")
+    parser.add_argument("--data_path", type=str, default=None, help="Override path to dataset root")
+    parser.add_argument("--epochs", type=int, default=None, help="Override number of epochs")
+    parser.add_argument("--max_iters", type=int, default=None, help="Override max iterations")
+    parser.add_argument("--batch_size", type=int, default=None, help="Override batch size")
+    parser.add_argument("--eval_only", action="store_true", help="Only evaluate student on val set")
+    parser.add_argument("--student_ckpt", type=str, default=None, help="Student checkpoint for eval_only")
+    parser.add_argument("--lr", type=float, default=None, help="Override learning rate")
+    parser.add_argument("--hint_pretrain_iters", type=int, default=None, help="Override hint pretrain iterations")
+    parser.add_argument("--num_workers", type=int, default=None, help="Override number of workers for DataLoader")
+    args = parser.parse_args()
+
+    cfg = load_config(args.config)
+    
+    if args.data_path is not None:
+        cfg["dataset"]["data_root"] = args.data_path
+    if args.epochs is not None:
+        cfg["train"]["epochs"] = args.epochs
+        if "max_iters" in cfg["train"]:
+            del cfg["train"]["max_iters"]
+    if args.max_iters is not None:
+        cfg["train"]["max_iters"] = args.max_iters
+        if "epochs" in cfg["train"]:
+            del cfg["train"]["epochs"]
+    if args.batch_size is not None:
+        cfg["dataset"]["batch_size"] = args.batch_size
+    if args.lr is not None:
+        cfg["train"]["lr"] = args.lr
+    if args.num_workers is not None:
+        cfg["dataset"]["num_workers"] = args.num_workers
+    if args.hint_pretrain_iters is not None:
+        if "distill" not in cfg:
+            cfg["distill"] = {}
+        cfg["distill"]["hint_pretrain_iters"] = args.hint_pretrain_iters
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    train_split = "training" if cfg["dataset"]["name"] == "ADE20K" else "train"
+    val_split = "validation" if cfg["dataset"]["name"] == "ADE20K" else "val"
+
+    train_dataset = get_dataset(cfg, split=train_split)
+    val_dataset = get_dataset(cfg, split=val_split)
+
+    loader_kwargs = dict(
+        batch_size=cfg["dataset"]["batch_size"],
+        num_workers=cfg["dataset"]["num_workers"],
+        pin_memory=cfg["dataset"].get("pin_memory", True),
+    )
+    train_loader = DataLoader(
+        train_dataset, shuffle=True, drop_last=True, **loader_kwargs
+    )
+    val_loader = DataLoader(val_dataset, shuffle=False, **loader_kwargs)
+
+    num_classes = cfg["model"]["num_classes"]
+    student = get_model(cfg["model"], role="student").to(device)
+    student_ckpt = args.student_ckpt or cfg["model"].get("student_checkpoint")
+    load_checkpoint(student, student_ckpt, device)
+
+    if args.eval_only:
+        img_size = cfg["dataset"]["img_size"]
+        h, w = (img_size[0], img_size[1]) if isinstance(img_size, (list, tuple)) else (img_size, img_size)
+        run_student_evaluation(
+            student,
+            val_loader,
+            device,
+            num_classes,
+            student_name=cfg["model"].get("student", "student"),
+            input_size=(1, 3, h, w),
+        )
+        return
+
+    distill_cfg = cfg.get("distill") or {}
+    distill_method = str(distill_cfg.get("method", "")).strip().lower()
+
+    if distill_method in ("", "none", "supervised", "finetune", "finetune_only"):
+        distiller = SupervisedSegformer(student, cfg)
+    else:
+        teacher = get_model(cfg["model"], role="teacher").to(device)
+        load_checkpoint(teacher, cfg["model"].get("teacher_checkpoint"), device)
+
+        if distill_method == "fitnet":
+            distiller = FitNet(student, teacher, cfg)
+        elif distill_method == "attnfd":
+            distiller = AttnFD(student, teacher, cfg)
+        elif distill_method in ("mlp", "mlpfd"):
+            from src.distillers.mlp import MLPFD
+            distiller = MLPFD(student, teacher, cfg)
+        elif distill_method == "bpkd":
+            from src.distillers.bpkd import BPKD
+            distiller = BPKD(student, teacher, cfg)
+        elif distill_method == "combine":
+            distiller = Combine(student, teacher, cfg)
+        elif distill_method == "uhbkd":
+            distiller = UHBKD(student, teacher, cfg)
+        else:
+            raise ValueError(f"Unknown distillation method: {distill_cfg.get('method')}")
+
+    distiller = distiller.to(device)
+    optimizer = build_optimizer(distiller, cfg)
+
+    Trainer(distiller, train_loader, val_loader, optimizer, device, cfg).train()
 
 if __name__ == "__main__":
     main()

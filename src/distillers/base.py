@@ -8,9 +8,11 @@ class Distiller(nn.Module):
         super(Distiller, self).__init__()
         self.student = student
         self.teacher = teacher
+        self.teacher.eval()
+        for p in self.teacher.parameters():
+            p.requires_grad = False
 
     def train(self, mode=True):
-        # teacher as eval mode by default
         if not isinstance(mode, bool):
             raise ValueError("training mode is expected to be boolean")
         self.training = mode
@@ -32,7 +34,7 @@ class Distiller(nn.Module):
         raise NotImplementedError()
 
     def forward_test(self, image):
-        return self.student(image)[0]
+        return self.student(image)
 
     def forward(self, **kwargs):
         if self.training:
