@@ -1,4 +1,4 @@
-# Phân Tích Lỗi Toàn Diện: Semantic Segmentation với Knowledge Distillation trên SegFormer
+# Phân Tích Lỗi: Semantic Segmentation với Knowledge Distillation trên SegFormer
 
 > **Tập dữ liệu đánh giá:** ADE20K Validation Set (2,000 ảnh, 150 lớp)
 > **Backbone:** SegFormer-B0 (Student) / SegFormer-B4 (Teacher)
