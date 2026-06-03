@@ -32,12 +32,15 @@ uv sync
 
 Run training with the Combine config:
 ```bash
-uv run main.py --config configs/combine.yml --data_path ADEChallengeData2016 --batch_size 32 --max_iters 40000
+uv run main.py --config configs/combine_weight.yml --data_path ADEChallengeData2016 --batch_size 16
 
-uv run main.py --config configs/combine.yml --data_path ADEChallengeData2016 --batch_size 40 --max_iters 32000
+uv run main.py --config configs/BPKD_ADE20k.yml --data_path ADEChallengeData2016 --batch_size 16
 
-uv run main.py --config configs/combine.yml --data_path ADEChallengeData2016 --batch_size 64 --max_iters 20000
+uv run main.py --config configs/MLP_ADE20k.yml --data_path ADEChallengeData2016 --batch_size 16
 
+uv run main.py --config configs/Segformer_ADE20k.yml --data_path ADEChallengeData2016 --batch_size 16
+
+uv run main.py --config configs/Segformer_B4_ADE20k.yml --data_path ADEChallengeData2016 --batch_size 16
 ```
 
 If the extracted dataset folder is not in the repository root, update `--data_path` to the actual `ADEChallengeData2016` path.
