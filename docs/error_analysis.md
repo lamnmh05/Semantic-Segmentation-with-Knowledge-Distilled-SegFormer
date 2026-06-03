@@ -124,33 +124,33 @@ Dựa trên quan sát định tính, chúng tôi phân loại các lỗi thành 
 ### 4.1. Lỗi Phân Loại Phần Thân (Misclassification / Body Error)
 **Đặc điểm:** Mô hình phân loại sai hoàn toàn ngữ nghĩa của một vùng pixel lớn, liên tục (thường là background như tường, trần, nền đất). Lỗi này thường xuất hiện dưới dạng các "khối màu" (blobs) sai lệch ngẫu nhiên.
 **Quan sát:** 
-- **MLP-FD** cực kỳ dễ mắc lỗi này. Ở **Hàng 1 (phòng trống)**, MLP tạo ra một khối màu hồng lớn (cushion/pillow) ở giữa phòng; hoặc ở **Hàng 4 (người đứng)** xuất hiện các vùng màu cam ngẫu nhiên trên mặt đất.
+- **MLP-FD** cực kỳ dễ mắc lỗi này. Ở **Hàng 6 (phòng trống)**, MLP tạo ra một khối màu hồng lớn (cushion/pillow) ở giữa phòng; hoặc ở **Hàng 7 (người đứng)** xuất hiện các vùng màu cam ngẫu nhiên trên mặt đất.
 - **Cách Combine khắc phục:** Combine loại bỏ gần như hoàn toàn các noise blobs này. Sự kết hợp giữa BPKD (hạn chế sự lan rộng của các vùng sai lệch) và MLP-FD giúp Combine đưa ra dự đoán ổn định và sạch hơn hẳn ở vùng background.
 
 ### 4.2. Lỗi Chảy Biên và Lan Màu (Boundary Bleed & Over-segmentation)
 **Đặc điểm:** Ranh giới giữa hai vật thể không sắc nét, màu của vật thể này "chảy" (bleed) sang vật thể khác, hoặc mô hình phóng to vật thể nhỏ (over-segmentation).
 **Quan sát:**
-- Ở **Hàng 7 (tòa nhà kính)**, ranh giới giữa bầu trời và cửa kính phản chiếu rất mờ nhạt ở MLP-FD. 
-- **BPKD** giải quyết tốt vấn đề làm sắc nét ranh giới này, nhưng lại gặp lỗi *over-segmentation* ở **Hàng 4**, khi vùng dụng cụ dưới chân người bị "phình to" so với thực tế.
+- Ở **Hàng 9 (tòa nhà kính)**, ranh giới giữa bầu trời và cửa kính phản chiếu rất mờ nhạt ở MLP-FD. 
+- **BPKD** giải quyết tốt vấn đề làm sắc nét ranh giới này, nhưng lại gặp lỗi *over-segmentation* ở **Hàng 7 (người đứng)**, khi vùng dụng cụ dưới chân người bị "phình to" so với thực tế.
 - **Cách Combine khắc phục:** Đạt được sự cân bằng (trade-off) tốt nhất. Combine giữ được đường biên sắc nét của tòa nhà (kế thừa từ BPKD) nhưng không làm phình các vật thể nhỏ (nhờ tín hiệu semantic neo giữ từ MLP-FD).
 
 ### 4.3. Ảo Giác và Nhiễu Cục Bộ (Hallucination / Local Noise)
 **Đặc điểm:** Mô hình "tưởng tượng" ra các lớp mới tại những vùng có kết cấu phức tạp, tạo ra các mảng màu vỡ vụn (noise patches).
 **Quan sát:**
-- Ở **Hàng 8 (phòng ngủ cầu kỳ)** với nhiều vật thể nhỏ xen kẽ, **BPKD** sinh ra rất nhiều nhiễu màu tím (purple noise) quanh khu vực rèm và giường. Điều này xảy ra do BPKD loss ép mô hình phải tìm ranh giới ở những vùng có texture rối rắm, dẫn đến tạo ra ranh giới giả.
+- Ở **Hàng 5 (phòng ngủ 1 giường)** với nhiều vật thể nhỏ xen kẽ, **BPKD** sinh ra rất nhiều nhiễu màu tím (purple noise) quanh khu vực rèm và giường. Điều này xảy ra do BPKD loss ép mô hình phải tìm ranh giới ở những vùng có texture rối rắm, dẫn đến tạo ra ranh giới giả.
 - **Cách Combine khắc phục:** Bằng cách kết hợp với MLP loss (tập trung vào ngữ nghĩa tổng thể thay vì chỉ chú trọng đường biên), Combine "làm phẳng" được các nhiễu giả này, cho kết quả vùng giường và rèm sạch hơn BPKD đáng kể.
 
 ### 4.4. Hạn Chế Độ Phân Giải – Mất Vật Thể Nhỏ (Missing Thin/Small Objects)
 **Đặc điểm:** Các vật thể có cấu trúc rất mỏng (cột, dây điện, đèn chùm) hoặc diện tích quá nhỏ bị bỏ sót hoàn toàn.
 **Quan sát:**
-- Ở **Hàng 6 (phòng billiards)**, đèn chùm treo trần (chandelier) rất mỏng. Ở **Hàng 4**, biển hiệu (signboard) bám vào tường khá nhỏ.
+- Ở **Hàng 3 (phòng billiards)**, đèn chùm treo trần (chandelier) rất mỏng. Ở **Hàng 7 (người đứng)**, biển hiệu (signboard) bám vào tường khá nhỏ.
 - Tất cả các Student models (MLP, BPKD, Combine) đều thất bại trong việc nhận diện các chi tiết này, bị "nuốt" bởi background. 
 - Chỉ có **Teacher (SegFormer-B4)** với receptive field lớn hơn và capacity dồi dào mới có thể giữ lại được chi tiết đèn chùm và biển hiệu. Đây là giới hạn về **Model Capacity**, không thể giải quyết triệt để chỉ bằng Knowledge Distillation trên mạng quá nhỏ.
 
 ### 4.5. Lỗi Nhập Nhằng Biên Giới Gradient (Gradient Boundary Ambiguity)
 **Đặc điểm:** Cảnh thiên nhiên ngoài trời (outdoor) nơi ranh giới giữa mặt đất, cánh đồng, đồi núi là một dải màu chuyển tiếp (gradient) thay vì một đường cắt rõ rệt.
 **Quan sát:**
-- Ở **Hàng 9 (cây trên đồng)** và **Hàng 10 (hoang mạc)**, ranh giới giữa cây bụi/mặt đất/cỏ vô cùng nhập nhằng.
+- Ở **Hàng 4 (cây trên đồng)** và **Hàng 8 (cánh đồng hoang)**, ranh giới giữa cây bụi/mặt đất/cỏ vô cùng nhập nhằng.
 - **Tất cả các mô hình**, bao gồm cả *Teacher*, đều dự đoán một vùng màu đen (misclass / ignore) rất lớn ở phần nửa dưới bức ảnh thay vì nhận diện đúng lớp đất (earth).
 - **Kết luận quan trọng:** Lỗi này phơi bày một **Architecture Limitation** (Hạn chế về mặt kiến trúc) hoặc vấn đề về Data Annotation, chứ không nằm ở phương pháp KD. Khi Teacher cũng sai, các phương pháp KD truyền thống như Combine hay BPKD không thể hướng dẫn Student làm đúng được vùng này.
 
