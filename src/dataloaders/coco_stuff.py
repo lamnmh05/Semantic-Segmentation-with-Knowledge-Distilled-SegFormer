@@ -64,23 +64,39 @@ class CocoStuff(Dataset):
 
     def __init__(self, data_root, split='train', img_size=(512, 512),
                  augment=False, scale_range=(0.5, 2.0), flip_prob=0.5):
-        self.data_root = data_root
-        self.split = split
-        self.img_size = tuple(img_size) if isinstance(img_size, list) else img_size
-        self.augment = augment and split == 'train'
-        self.scale_range = scale_range
-        self.flip_prob = flip_prob
-        
-        self.img_dir = os.path.join(data_root, 'images', split)
-        self.ann_dir = os.path.join(data_root, 'annotations', split)
-        
-        self.images = []
-        if os.path.exists(self.img_dir):
-            for file in os.listdir(self.img_dir):
-                if file.endswith('.jpg'):
-                    self.images.append(file)
-        else:
-            print(f"Warning: {self.img_dir} does not exist.")
+         self.data_root = data_root
+         
+         # Auto-detect folder names for validation/training splits
+         if split == 'validation' and not os.path.exists(os.path.join(data_root, 'images', 'validation')):
+             if os.path.exists(os.path.join(data_root, 'images', 'val')):
+                 split = 'val'
+         elif split == 'val' and not os.path.exists(os.path.join(data_root, 'images', 'val')):
+             if os.path.exists(os.path.join(data_root, 'images', 'validation')):
+                 split = 'validation'
+                 
+         if split == 'training' and not os.path.exists(os.path.join(data_root, 'images', 'training')):
+             if os.path.exists(os.path.join(data_root, 'images', 'train')):
+                 split = 'train'
+         elif split == 'train' and not os.path.exists(os.path.join(data_root, 'images', 'train')):
+             if os.path.exists(os.path.join(data_root, 'images', 'training')):
+                 split = 'training'
+
+         self.split = split
+         self.img_size = tuple(img_size) if isinstance(img_size, list) else img_size
+         self.augment = augment and split in ('train', 'training')
+         self.scale_range = scale_range
+         self.flip_prob = flip_prob
+         
+         self.img_dir = os.path.join(data_root, 'images', split)
+         self.ann_dir = os.path.join(data_root, 'annotations', split)
+         
+         self.images = []
+         if os.path.exists(self.img_dir):
+             for file in os.listdir(self.img_dir):
+                 if file.endswith('.jpg'):
+                     self.images.append(file)
+         else:
+             print(f"Warning: {self.img_dir} does not exist.")
             
     def __len__(self):
         return len(self.images)

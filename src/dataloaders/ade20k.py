@@ -80,9 +80,25 @@ class ADE20KDataset(Dataset):
     def __init__(self, data_root, split='training', img_size=(512, 512),
                  augment=False, scale_range=(0.5, 2.0), flip_prob=0.5):
         self.data_root = data_root
+        
+        # Auto-detect folder names for validation/training splits
+        if split == 'validation' and not os.path.exists(os.path.join(data_root, 'images', 'validation')):
+            if os.path.exists(os.path.join(data_root, 'images', 'val')):
+                split = 'val'
+        elif split == 'val' and not os.path.exists(os.path.join(data_root, 'images', 'val')):
+            if os.path.exists(os.path.join(data_root, 'images', 'validation')):
+                split = 'validation'
+                
+        if split == 'training' and not os.path.exists(os.path.join(data_root, 'images', 'training')):
+            if os.path.exists(os.path.join(data_root, 'images', 'train')):
+                split = 'train'
+        elif split == 'train' and not os.path.exists(os.path.join(data_root, 'images', 'train')):
+            if os.path.exists(os.path.join(data_root, 'images', 'training')):
+                split = 'training'
+
         self.split = split
         self.img_size = tuple(img_size) if isinstance(img_size, list) else img_size
-        self.augment = augment and split == 'training'
+        self.augment = augment and split in ('training', 'train')
         self.scale_range = scale_range
         self.flip_prob = flip_prob
         

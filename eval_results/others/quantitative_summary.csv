@@ -1,0 +1,5 @@
+Method,mIoU (%),Pixel Acc (%),mAcc (%)
+MLP-FD,33.86,76.16,44.69
+BPKD,35.26,76.26,46.78
+Combine,36.20,76.65,47.99
+Teacher,49.10,82.30,60.40
