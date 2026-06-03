@@ -121,76 +121,35 @@ Phần này phân tích trực quan kết quả dự đoán của các mô hình
 
 Dựa trên quan sát định tính, chúng tôi phân loại các lỗi thành 5 nhóm chính:
 
-### 4.1. Lỗi Phân Loại Phần Thân (Misclassification / Body Error)
+### 4.1. Misclassification / Body Error (Lỗi Phân Loại Phần Thân)
 **Đặc điểm:** Mô hình phân loại sai hoàn toàn ngữ nghĩa của một vùng pixel lớn, liên tục (thường là background như tường, trần, nền đất). Lỗi này thường xuất hiện dưới dạng các "khối màu" (blobs) sai lệch ngẫu nhiên.
 **Quan sát:** 
 - **MLP-FD** cực kỳ dễ mắc lỗi này. Ở **Hàng 6 (phòng trống)**, MLP tạo ra một khối màu hồng lớn (cushion/pillow) ở giữa phòng; hoặc ở **Hàng 7 (người đứng)** xuất hiện các vùng màu cam ngẫu nhiên trên mặt đất.
 - **Cách Combine khắc phục:** Combine loại bỏ gần như hoàn toàn các noise blobs này. Sự kết hợp giữa BPKD (hạn chế sự lan rộng của các vùng sai lệch) và MLP-FD giúp Combine đưa ra dự đoán ổn định và sạch hơn hẳn ở vùng background.
 
-### 4.2. Lỗi Chảy Biên và Lan Màu (Boundary Bleed & Over-segmentation)
+### 4.2. Boundary Bleed & Over-segmentation (Lỗi Chảy Biên và Lan Màu)
 **Đặc điểm:** Ranh giới giữa hai vật thể không sắc nét, màu của vật thể này "chảy" (bleed) sang vật thể khác, hoặc mô hình phóng to vật thể nhỏ (over-segmentation).
 **Quan sát:**
 - Ở **Hàng 9 (tòa nhà kính)**, ranh giới giữa bầu trời và cửa kính phản chiếu rất mờ nhạt ở MLP-FD. 
 - **BPKD** giải quyết tốt vấn đề làm sắc nét ranh giới này, nhưng lại gặp lỗi *over-segmentation* ở **Hàng 7 (người đứng)**, khi vùng dụng cụ dưới chân người bị "phình to" so với thực tế.
 - **Cách Combine khắc phục:** Đạt được sự cân bằng (trade-off) tốt nhất. Combine giữ được đường biên sắc nét của tòa nhà (kế thừa từ BPKD) nhưng không làm phình các vật thể nhỏ (nhờ tín hiệu semantic neo giữ từ MLP-FD).
 
-### 4.3. Ảo Giác và Nhiễu Cục Bộ (Hallucination / Local Noise)
+### 4.3.Hallucination / Local Noise (Ảo Giác và Nhiễu Cục Bộ)
 **Đặc điểm:** Mô hình "tưởng tượng" ra các lớp mới tại những vùng có kết cấu phức tạp, tạo ra các mảng màu vỡ vụn (noise patches).
 **Quan sát:**
 - Ở **Hàng 5 (phòng ngủ 1 giường)** với nhiều vật thể nhỏ xen kẽ, **BPKD** sinh ra rất nhiều nhiễu màu tím (purple noise) quanh khu vực rèm và giường. Điều này xảy ra do BPKD loss ép mô hình phải tìm ranh giới ở những vùng có texture rối rắm, dẫn đến tạo ra ranh giới giả.
 - **Cách Combine khắc phục:** Bằng cách kết hợp với MLP loss (tập trung vào ngữ nghĩa tổng thể thay vì chỉ chú trọng đường biên), Combine "làm phẳng" được các nhiễu giả này, cho kết quả vùng giường và rèm sạch hơn BPKD đáng kể.
 
-### 4.4. Hạn Chế Độ Phân Giải – Mất Vật Thể Nhỏ (Missing Thin/Small Objects)
+### 4.4. Missing Thin/Small Objects (Hạn Chế Độ Phân Giải – Mất Vật Thể Nhỏ)
 **Đặc điểm:** Các vật thể có cấu trúc rất mỏng (cột, dây điện, đèn chùm) hoặc diện tích quá nhỏ bị bỏ sót hoàn toàn.
 **Quan sát:**
 - Ở **Hàng 3 (phòng billiards)**, đèn chùm treo trần (chandelier) rất mỏng. Ở **Hàng 7 (người đứng)**, biển hiệu (signboard) bám vào tường khá nhỏ.
 - Tất cả các Student models (MLP, BPKD, Combine) đều thất bại trong việc nhận diện các chi tiết này, bị "nuốt" bởi background. 
 - Chỉ có **Teacher (SegFormer-B4)** với receptive field lớn hơn và capacity dồi dào mới có thể giữ lại được chi tiết đèn chùm và biển hiệu. Đây là giới hạn về **Model Capacity**, không thể giải quyết triệt để chỉ bằng Knowledge Distillation trên mạng quá nhỏ.
 
-### 4.5. Lỗi Nhập Nhằng Biên Giới Gradient (Gradient Boundary Ambiguity)
+### 4.5. Gradient Boundary Ambiguity (Lỗi Nhập Nhằng Biên Giới Gradient)
 **Đặc điểm:** Cảnh thiên nhiên ngoài trời (outdoor) nơi ranh giới giữa mặt đất, cánh đồng, đồi núi là một dải màu chuyển tiếp (gradient) thay vì một đường cắt rõ rệt.
 **Quan sát:**
 - Ở **Hàng 4 (cây trên đồng)** và **Hàng 8 (cánh đồng hoang)**, ranh giới giữa cây bụi/mặt đất/cỏ vô cùng nhập nhằng.
 - **Tất cả các mô hình**, bao gồm cả *Teacher*, đều dự đoán một vùng màu đen (misclass / ignore) rất lớn ở phần nửa dưới bức ảnh thay vì nhận diện đúng lớp đất (earth).
 - **Kết luận quan trọng:** Lỗi này phơi bày một **Architecture Limitation** (Hạn chế về mặt kiến trúc) hoặc vấn đề về Data Annotation, chứ không nằm ở phương pháp KD. Khi Teacher cũng sai, các phương pháp KD truyền thống như Combine hay BPKD không thể hướng dẫn Student làm đúng được vùng này.
-
-## 5. Tổng Hợp Điểm Mạnh và Điểm Yếu
-
-### 5.1 MLP-FD (Feature Distillation thuần)
-
-| Điểm mạnh | Điểm yếu |
-|:-----------|:----------|
-| Ổn định trên cảnh indoor đơn giản (ít lớp, vùng liên tục lớn) | Xuất hiện noise blobs misclassification nghiêm trọng (ảnh 4.1, 4.4) |
-| Chi phí tính toán thấp, hội tụ nhanh | Kém nhất trên các lớp hiếm (rare classes), ví dụ ottoman chỉ 6.24% IoU |
-| Hoạt động ổn định trên building/sky segmentation | Yếu nhất ở ranh giới gradient (ảnh 4.9, 4.10): toàn bộ vùng đất bị misclassify |
-| — | mIoU thấp nhất (33.86%), khoảng cách với Teacher lớn nhất (−15.24%) |
-
-### 5.2 BPKD (Boundary-Preserving Knowledge Distillation)
-
-| Điểm mạnh | Điểm yếu |
-|:-----------|:----------|
-| Ranh giới giữa các lớp sắc nét hơn MLP-FD (ảnh 4.2, 4.3, 4.7) | Xuất hiện "purple hallucination" ở cảnh phức tạp (ảnh 4.8): tạo ra lớp giả ở vùng không chắc chắn |
-| Cải thiện đáng kể ở lớp *sculpture* (40.01% vs MLP 16.87%) — vật thể cần boundary chính xác | Xu hướng over-segment vật thể nhỏ: đẩy biên giới ra xa gây phình (ảnh 4.4) |
-| Tổng thể tốt hơn MLP-FD: +1.40% mIoU, +2.09% mAcc | Không giải quyết được lỗi semantic ở phần thân (body misclassification chiếm 82%) |
-| Giảm Boundary Error ~71K pixel so với MLP-FD | Yếu ở các lớp có texture lặp lại (conveyer belt, screen) |
-
-### 5.3 Combine (Phương Pháp Đề Xuất: MLP-FD + BPKD)
-
-| Điểm mạnh | Điểm yếu |
-|:-----------|:----------|
-| **mIoU cao nhất trong nhóm Student** (36.20%), vượt MLP-FD +2.34%, BPKD +0.94% | Sụt giảm nghiêm trọng ở conveyer belt (−17.67%) — gradient conflict giữa hai loss |
-| Giảm cả hai loại lỗi: Boundary Error −108K pixel, Misclass Error −630K pixel so với MLP-FD | Vẫn gặp khó khăn với vật thể rất mỏng (chandelier, pole) — giới hạn của SegFormer-B0 |
-| Cải thiện vượt trội ở các lớp vật thể đặc trưng: ship (+25.08%), tank (+12.36%), van (+8.72%) | Khoảng cách với Teacher vẫn lớn (−12.90% mIoU) — capacity gap chưa được thu hẹp triệt để |
-| **Loại bỏ noise hiệu quả:** không còn pink blobs (từ MLP-FD) hay purple hallucination (từ BPKD) | Một số lớp hoạt động như "trung bình" của hai baseline thay vì "tốt nhất của cả hai" (ví dụ bathtub) |
-| Hoạt động tốt trên mọi dạng cảnh indoor, từ đơn giản (ảnh 4.1) đến phức tạp (ảnh 4.8) | Lớp có texture lặp lại (screen, screen door) bị ảnh hưởng bởi conflict giữa hai hàm loss |
-| Kế thừa ưu thế biên giới từ BPKD mà không mất semantic accuracy từ MLP-FD | Trên cảnh outdoor gradient (ảnh 4.9, 4.10), cải thiện có hạn — lỗi mang tính architecture limitation |
-
-### 5.4 Teacher (SegFormer-B4 — Upper Bound)
-
-| Điểm mạnh | Điểm yếu |
-|:-----------|:----------|
-| mIoU vượt trội (49.10%), Error Rate thấp nhất (17.30%) | Không khả thi cho real-time deployment: 64.1M params, inference chậm hơn ~17× Student |
-| Nhận diện vật thể nhỏ, mỏng, hiếm tốt hơn hẳn (chandelier, signboard, car nhỏ) | Vẫn mắc lỗi trên cảnh outdoor gradient — chứng tỏ đây là giới hạn kiến trúc, không phải capacity |
-| Boundary Error chiếm tỷ lệ cao hơn (20.5%) — phản ánh phần thân đã đúng, chỉ còn lỗi ở viền | Tỷ lệ Boundary Error cao hơn Student cho thấy ngay cả model lớn vẫn chưa giải quyết được boundary |
-
----
