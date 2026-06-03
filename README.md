@@ -3,7 +3,7 @@
 This repository contains the implementation for Semantic Segmentation using Knowledge Distillation with SegFormer. 
 It supports multiple distillation methods and datasets (ADE20K, COCOStuff).
 
-## 📂 Project Structure
+## Project Structure
 ```text
 .
 ├── configs/                  # Configuration files for different methods/datasets
@@ -22,7 +22,7 @@ It supports multiple distillation methods and datasets (ADE20K, COCOStuff).
 └── requirements.txt          # Python dependencies
 ```
 
-## 🛠️ Preparation & Setup
+## Preparation & Setup
 
 ### 1. Environment Setup
 We recommend using [uv](https://github.com/astral-sh/uv) or `pip` to install dependencies.
@@ -47,7 +47,7 @@ Ensure the folder `ADEChallengeData2016` exists. You will pass its path using th
 
 ---
 
-## 🚀 Training
+## Training
 
 To train the student model using a specific distillation method, use `main.py` with the corresponding config file.
 
@@ -67,7 +67,7 @@ python main.py --config configs/Segformer_ADE20k.yml --data_path path/to/ADEChal
 
 ---
 
-## 🧪 Evaluation & Error Analysis
+## Evaluation & Error Analysis
 
 ### 1. Inline Evaluation
 During training, the model is automatically evaluated on the validation set at regular intervals (defined by `eval_interval` in config).
@@ -107,7 +107,7 @@ python -m src.evaluation.main_eval \
 
 ---
 
-## ☁️ Cloud / Kaggle Execution
+## Cloud / Kaggle Execution
 If running on Kaggle or Colab, clone the repo and execute directly from a notebook cell:
 
 ```python
